@@ -8,6 +8,7 @@ import Employees from '../pages/Employees'
 import Leave from '../pages/Leave'
 import Login from '../pages/Login'
 import NotFound from '../pages/NotFound'
+import Reports from '../pages/Reports'
 import RoleManagement from '../pages/RoleManagement'
 import Unauthorized from '../pages/Unauthorized'
 
@@ -78,6 +79,20 @@ export function AppRoutes({ authService }: AppRoutesProps) {
               ]}
             >
               <Leave />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reports"
+          element={
+            <ProtectedRoute
+              anyOfPermissions={[
+                'reports.view_own',
+                'reports.view_team',
+                'reports.view_all',
+              ]}
+            >
+              <Reports />
             </ProtectedRoute>
           }
         />

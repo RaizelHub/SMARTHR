@@ -37,6 +37,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
     'leave.read_team',
     'leave.read_all',
   ])
+  const canViewReports = auth.hasAnyPermission([
+    'reports.view_own',
+    'reports.view_team',
+    'reports.view_all',
+  ])
   const canManageRoles = auth.hasPermission('roles.manage')
 
   async function handleSignOut() {
@@ -85,6 +90,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 {canViewLeave && (
                   <NavLink to="/leave" className={navLinkClass}>
                     Leave
+                  </NavLink>
+                )}
+                {canViewReports && (
+                  <NavLink to="/reports" className={navLinkClass}>
+                    Reports
                   </NavLink>
                 )}
                 {canManageRoles && (

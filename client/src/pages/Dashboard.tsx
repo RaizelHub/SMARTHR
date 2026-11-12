@@ -11,6 +11,13 @@ export default function Dashboard() {
   const canReadTeamEmployees = auth.hasPermission('employees.read_team')
   const canManageRoles = auth.hasPermission('roles.manage')
   const canReviewLeave = auth.hasAnyPermission(['leave.approve', 'leave.reject'])
+  const canViewReports = auth.hasAnyPermission([
+    'reports.view_own',
+    'reports.view_team',
+    'reports.view_all',
+  ])
+  const canViewAllReports = auth.hasPermission('reports.view_all')
+  const canViewTeamReports = auth.hasPermission('reports.view_team')
 
   return (
     <AppLayout>
@@ -115,6 +122,34 @@ export default function Dashboard() {
               </Link>
             </div>
           </section>
+
+          {canViewReports && (
+            <section className="rounded-lg border border-slate-200 bg-white p-5">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-base font-semibold text-slate-900">
+                  Reports &amp; Analytics
+                </h2>
+                <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">
+                  Phase 5 Active (Demo)
+                </span>
+              </div>
+              <p className="mt-2 text-sm text-slate-600">
+                {canViewAllReports
+                  ? 'Inspect organization-wide workforce, attendance, and leave analytics with filtered CSV exports.'
+                  : canViewTeamReports
+                    ? `Review analytics and CSV exports scoped to the ${user?.department ?? ''} department.`
+                    : 'Inspect your personal workforce profile, attendance, and leave summaries.'}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link
+                  to="/reports"
+                  className="rounded-md bg-blue-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  Open Reports &amp; Analytics
+                </Link>
+              </div>
+            </section>
+          )}
 
           {canManageRoles ? (
             <section className="rounded-lg border border-slate-200 bg-white p-5">

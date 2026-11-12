@@ -20,10 +20,16 @@ export const PERMISSIONS = [
   'leave.read_all',
   'leave.approve',
   'leave.reject',
+  'reports.view_own',
+  'reports.view_team',
+  'reports.view_all',
+  'reports.export',
   'roles.manage',
 ] as const
 
 export type Permission = (typeof PERMISSIONS)[number]
+
+export type ReportScope = 'none' | 'own' | 'team' | 'all'
 
 export const ROLE_PERMISSIONS: Readonly<
   Record<AssignedRole, readonly Permission[]>
@@ -34,6 +40,7 @@ export const ROLE_PERMISSIONS: Readonly<
     'attendance.read_own',
     'leave.request',
     'leave.read_own',
+    'reports.view_own',
   ],
   Manager: [
     'employees.read_own',
@@ -46,6 +53,9 @@ export const ROLE_PERMISSIONS: Readonly<
     'leave.read_team',
     'leave.approve',
     'leave.reject',
+    'reports.view_own',
+    'reports.view_team',
+    'reports.export',
   ],
   'HR Coordinator': [
     'employees.read_own',
@@ -60,6 +70,9 @@ export const ROLE_PERMISSIONS: Readonly<
     'leave.read_all',
     'leave.approve',
     'leave.reject',
+    'reports.view_own',
+    'reports.view_all',
+    'reports.export',
   ],
   'HR Admin': [
     'employees.read_own',
@@ -75,6 +88,9 @@ export const ROLE_PERMISSIONS: Readonly<
     'leave.read_all',
     'leave.approve',
     'leave.reject',
+    'reports.view_own',
+    'reports.view_all',
+    'reports.export',
     'roles.manage',
   ],
 } as const
@@ -278,5 +294,44 @@ export function canManageEmployeeRole(
     | undefined,
 ): boolean {
   return hasPermission(actor, 'roles.manage')
+}
+
+export function getReportScope(
+  actor:
+    | Pick<Employee, 'employmentStatus' | 'assignedRole'>
+    | null
+    | undefined,
+): ReportScope {
+  if (!isActiveActor(actor)) {
+    return 'none'
+  }
+  if (hasPermission(actor, 'reports.view_all')) {
+    return 'all'
+  }
+  if (hasPermission(actor, 'reports.view_team')) {
+    return 'team'
+  }
+  if (hasPermission(actor, 'reports.view_own')) {
+    return 'own'
+  }
+  return 'none'
+}
+
+export function canViewReport(
+  actor:
+    | Pick<Employee, 'employmentStatus' | 'assignedRole'>
+    | null
+    | undefined,
+): boolean {
+  return getReportScope(actor) !== 'none'
+}
+
+export function canExportReports(
+  actor:
+    | Pick<Employee, 'employmentStatus' | 'assignedRole'>
+    | null
+    | undefined,
+): boolean {
+  return hasPermission(actor, 'reports.export')
 }
 
