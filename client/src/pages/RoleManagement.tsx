@@ -31,8 +31,15 @@ function getAuditBadgeClasses(eventType: SecurityAuditEntry['eventType']): strin
     'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium'
   switch (eventType) {
     case 'ROLE_CHANGED':
+    case 'COMPENSATION_CREATED':
+    case 'PAYROLL_PERIOD_CREATED':
+    case 'PAYROLL_DRAFT_GENERATED':
+    case 'PAYROLL_ADJUSTMENT_ADDED':
+    case 'PAYROLL_MARKED_IN_REVIEW':
       return `${base} border-blue-200 bg-blue-50 text-blue-800`
     case 'ROLE_CHANGE_DENIED':
+    case 'COMPENSATION_DENIED':
+    case 'PAYROLL_ACCESS_DENIED':
       return `${base} border-red-200 bg-red-50 text-red-800`
     case 'DIRECTORY_CLEARED':
     case 'DIRECTORY_RESET':

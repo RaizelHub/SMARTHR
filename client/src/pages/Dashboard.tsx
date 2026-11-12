@@ -18,6 +18,8 @@ export default function Dashboard() {
   ])
   const canViewAllReports = auth.hasPermission('reports.view_all')
   const canViewTeamReports = auth.hasPermission('reports.view_team')
+  const canViewOrgPayroll = auth.hasPermission('payroll.view')
+  const canViewOwnPayslips = auth.hasPermission('payroll.view_own')
 
   return (
     <AppLayout>
@@ -146,6 +148,34 @@ export default function Dashboard() {
                   className="rounded-md bg-blue-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-600"
                 >
                   Open Reports &amp; Analytics
+                </Link>
+              </div>
+            </section>
+          )}
+
+          {(canViewOrgPayroll || canViewOwnPayslips) && (
+            <section className="rounded-lg border border-slate-200 bg-white p-5">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-base font-semibold text-slate-900">
+                  {canViewOrgPayroll
+                    ? 'Payroll Foundation'
+                    : 'My Draft Payslips'}
+                </h2>
+                <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">
+                  Phase 6A Active (Demo)
+                </span>
+              </div>
+              <p className="mt-2 text-sm text-slate-600">
+                {canViewOrgPayroll
+                  ? 'Manage effective-dated PHP compensation, payroll periods, draft calculations, and draft payslip previews.'
+                  : 'Inspect your personal draft payslips with itemized earnings and deductions.'}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link
+                  to="/payroll"
+                  className="rounded-md bg-blue-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  {canViewOrgPayroll ? 'Open Payroll Foundation' : 'View My Draft Payslips'}
                 </Link>
               </div>
             </section>

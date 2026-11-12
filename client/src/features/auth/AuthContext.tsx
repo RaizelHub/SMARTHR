@@ -9,6 +9,7 @@ import type { Employee } from '../../types/employee'
 import { AuthContext, type AuthContextValue } from './authContextStore'
 import {
   authService as defaultAuthService,
+  AuthServiceError,
   type AuthService,
   type AuthStatus,
   type DemoSession,
@@ -140,6 +141,26 @@ export function AuthProvider({
     [authService],
   )
 
+  const signInWithCredentials = useCallback(
+    async (email: string, password: string): Promise<Employee> => {
+      if (!authService.signInWithCredentials) {
+        throw new AuthServiceError(
+          'UNAUTHORIZED',
+          'Email/password authentication is only enabled when connected to the backend API.',
+          401,
+        )
+      }
+      const result = await authService.signInWithCredentials(email, password)
+      setState({
+        status: 'authenticated',
+        user: result.user,
+        session: result.session,
+      })
+      return result.user
+    },
+    [authService],
+  )
+
   const signOut = useCallback(async (): Promise<void> => {
     await authService.signOut()
     setState({
@@ -190,6 +211,7 @@ export function AuthProvider({
           activeUser && state.session ? state.session.expiresAtUtc : null,
       },
       signIn,
+      signInWithCredentials,
       signOut,
       refreshSession,
       hasPermission: (permission: Permission) =>
@@ -202,6 +224,7 @@ export function AuthProvider({
       authService.isDemoMode,
       refreshSession,
       signIn,
+      signInWithCredentials,
       signOut,
       state.session,
       state.status,

@@ -21,6 +21,7 @@ export interface AuthContextValue {
   isDemoMode: boolean
   actorContext: AuthActorContext
   signIn: (employeeId: string, ttlMs?: number) => Promise<Employee>
+  signInWithCredentials: (email: string, password: string) => Promise<Employee>
   signOut: () => Promise<void>
   refreshSession: () => Promise<void>
   hasPermission: (permission: Permission) => boolean
@@ -39,6 +40,13 @@ const FAIL_CLOSED_AUTH_CONTEXT: AuthContextValue = {
     sessionExpiresAtUtc: null,
   },
   signIn: async () => {
+    throw new AuthServiceError(
+      'UNAUTHORIZED',
+      'Authentication provider is unavailable.',
+      401,
+    )
+  },
+  signInWithCredentials: async () => {
     throw new AuthServiceError(
       'UNAUTHORIZED',
       'Authentication provider is unavailable.',

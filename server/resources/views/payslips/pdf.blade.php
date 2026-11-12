@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Smart HR Payslip - {{ $payslip['employeeId'] }}</title>
+  <style>
+    body { font-family: DejaVu Sans, sans-serif; color: #0f172a; font-size: 11px; margin: 24px; }
+    .header { border-bottom: 2px solid #cbd5e1; padding-bottom: 12px; margin-bottom: 16px; }
+    .badge { display: inline-block; padding: 3px 8px; font-size: 10px; font-weight: bold; border: 1px solid #991b1b; color: #991b1b; background: #fef2f2; }
+    .badge-approved { border-color: #166534; color: #166534; background: #f0fdf4; }
+    h1 { font-size: 16px; margin: 6px 0 4px 0; }
+    .meta { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    .meta td { padding: 4px 6px; border: 1px solid #e2e8f0; }
+    .section-title { font-size: 12px; font-weight: bold; margin: 12px 0 6px 0; }
+    .items { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    .items th, .items td { padding: 5px 6px; border: 1px solid #e2e8f0; text-align: left; }
+    .items th { background: #f8fafc; font-size: 10px; text-transform: uppercase; }
+    .num { text-align: right; font-family: DejaVu Sans Mono, monospace; }
+    .summary { margin-top: 14px; padding: 10px; border: 1px solid #94a3b8; background: #f8fafc; }
+    .disclaimer { margin-top: 14px; font-size: 9px; color: #475569; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    @if(in_array($payslip['status'], ['Approved', 'Locked'], true))
+      <span class="badge badge-approved">APPROVED PAYSLIP RECORD ({{ strtoupper($payslip['status']) }}) — NOT A DISBURSEMENT RECEIPT</span>
+    @else
+      <span class="badge">DRAFT / {{ strtoupper($payslip['status']) }} — NOT FOR PAYMENT</span>
+    @endif
+    <h1>Smart HR — Employee Payslip Breakdown (PHP)</h1>
+  </div>
+
+  <table class="meta">
+    <tr>
+      <td><strong>Employee:</strong> {{ $payslip['employeeName'] }} ({{ $payslip['employeeId'] }})</td>
+      <td><strong>Department:</strong> {{ $payslip['department'] }}</td>
+    </tr>
+    <tr>
+      <td><strong>Payroll Period:</strong> {{ $payslip['periodLabel'] }} ({{ $payslip['periodStart'] }} to {{ $payslip['periodEnd'] }})</td>
+      <td><strong>Pay Date:</strong> {{ $payslip['payDate'] }}</td>
+    </tr>
+    <tr>
+      <td><strong>Basis &amp; Schedule:</strong> {{ $payslip['payBasis'] }} / {{ $payslip['scheduleType'] }}</td>
+      <td><strong>Workflow Status:</strong> {{ $payslip['status'] }}</td>
+    </tr>
+  </table>
+
+  <div class="section-title">Earnings</div>
+  <table class="items">
+    <thead>
+      <tr>
+        <th>Description</th>
+        <th>Source</th>
+        <th class="num">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      @foreach($payslip['earnings'] as $line)
+        <tr>
+          <td>{{ $line['label'] }}</td>
+          <td>{{ $line['source'] }}</td>
+          <td class="num">{{ $formatPhp($line['amountCentavos']) }}</td>
+        </tr>
+      @endforeach
+    </tbody>
+    <tfoot>
+      <tr>
+        <th colspan="2">Gross Pay</th>
+        <th class="num">{{ $formatPhp($payslip['grossPayCentavos']) }}</th>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="section-title">Employee Statutory &amp; Approved Deductions</div>
+  <table class="items">
+    <thead>
+      <tr>
+        <th>Description</th>
+        <th>Source</th>
+        <th class="num">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      @forelse($payslip['deductions'] as $line)
+        <tr>
+          <td>{{ $line['label'] }}</td>
+          <td>{{ $line['source'] }}</td>
+          <td class="num">{{ $formatPhp($line['amountCentavos']) }}</td>
+        </tr>
+      @empty
+        <tr>
+          <td colspan="3">No employee deductions applied for this period.</td>
+        </tr>
+      @endforelse
+    </tbody>
+    <tfoot>
+      <tr>
+        <th colspan="2">Total Employee Deductions</th>
+        <th class="num">{{ $formatPhp($payslip['totalDeductionsCentavos']) }}</th>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="section-title">Employer Statutory Shares (Informational — Not Deducted From Employee Net Pay)</div>
+  <table class="items">
+    <thead>
+      <tr>
+        <th>Employer Share</th>
+        <th>Agency / Rule</th>
+        <th class="num">Employer Cost</th>
+      </tr>
+    </thead>
+    <tbody>
+      @forelse($payslip['employerCosts'] as $line)
+        <tr>
+          <td>{{ $line['label'] }}</td>
+          <td>{{ $line['source'] }}</td>
+          <td class="num">{{ $formatPhp($line['amountCentavos']) }}</td>
+        </tr>
+      @empty
+        <tr>
+          <td colspan="3">No employer statutory shares recorded for this entry.</td>
+        </tr>
+      @endforelse
+    </tbody>
+    <tfoot>
+      <tr>
+        <th colspan="2">Total Employer Statutory Cost</th>
+        <th class="num">{{ $formatPhp($payslip['totalEmployerCostCentavos']) }}</th>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="summary">
+    <strong>Net Take-Home Pay:</strong> {{ $formatPhp($payslip['netPayCentavos']) }}
+  </div>
+
+  <p class="disclaimer">
+    Generated by Smart HR Payroll Engine ({{ $payslip['ruleSnapshot']['engineVersion'] ?? 'phase-6b-v1' }}). Approval or locking does not constitute bank payment disbursement or official BIR/SSS/PhilHealth/Pag-IBIG government remittance proof.
+  </p>
+</body>
+</html>
+

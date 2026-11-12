@@ -42,6 +42,10 @@ export default function AppLayout({ children }: AppLayoutProps) {
     'reports.view_team',
     'reports.view_all',
   ])
+  const canViewPayroll = auth.hasAnyPermission([
+    'payroll.view_own',
+    'payroll.view',
+  ])
   const canManageRoles = auth.hasPermission('roles.manage')
 
   async function handleSignOut() {
@@ -97,6 +101,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
                     Reports
                   </NavLink>
                 )}
+                {canViewPayroll && (
+                  <NavLink to="/payroll" className={navLinkClass}>
+                    Payroll
+                  </NavLink>
+                )}
                 {canManageRoles && (
                   <NavLink to="/roles" className={navLinkClass}>
                     Access Control
@@ -107,9 +116,15 @@ export default function AppLayout({ children }: AppLayoutProps) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800">
-              Demo Mode · Local RBAC
-            </span>
+            {auth.isDemoMode ? (
+              <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800">
+                Demo Mode · Local RBAC
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">
+                Laravel API · Sanctum Auth
+              </span>
+            )}
 
             {auth.isAuthenticated && user ? (
               <>

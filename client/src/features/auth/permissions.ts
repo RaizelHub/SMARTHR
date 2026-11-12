@@ -24,6 +24,15 @@ export const PERMISSIONS = [
   'reports.view_team',
   'reports.view_all',
   'reports.export',
+  'payroll.view_own',
+  'payroll.view',
+  'payroll.create',
+  'payroll.calculate',
+  'payroll.review',
+  'payroll.approve',
+  'payroll.lock',
+  'payroll.export',
+  'compensation.manage',
   'roles.manage',
 ] as const
 
@@ -41,6 +50,7 @@ export const ROLE_PERMISSIONS: Readonly<
     'leave.request',
     'leave.read_own',
     'reports.view_own',
+    'payroll.view_own',
   ],
   Manager: [
     'employees.read_own',
@@ -56,6 +66,7 @@ export const ROLE_PERMISSIONS: Readonly<
     'reports.view_own',
     'reports.view_team',
     'reports.export',
+    'payroll.view_own',
   ],
   'HR Coordinator': [
     'employees.read_own',
@@ -73,6 +84,13 @@ export const ROLE_PERMISSIONS: Readonly<
     'reports.view_own',
     'reports.view_all',
     'reports.export',
+    'payroll.view_own',
+    'payroll.view',
+    'payroll.create',
+    'payroll.calculate',
+    'payroll.review',
+    'payroll.export',
+    'compensation.manage',
   ],
   'HR Admin': [
     'employees.read_own',
@@ -91,6 +109,15 @@ export const ROLE_PERMISSIONS: Readonly<
     'reports.view_own',
     'reports.view_all',
     'reports.export',
+    'payroll.view_own',
+    'payroll.view',
+    'payroll.create',
+    'payroll.calculate',
+    'payroll.review',
+    'payroll.approve',
+    'payroll.lock',
+    'payroll.export',
+    'compensation.manage',
     'roles.manage',
   ],
 } as const
@@ -335,3 +362,43 @@ export function canExportReports(
   return hasPermission(actor, 'reports.export')
 }
 
+export function canAccessPayrollManagement(
+  actor:
+    | Pick<Employee, 'employmentStatus' | 'assignedRole'>
+    | null
+    | undefined,
+): boolean {
+  return hasPermission(actor, 'payroll.view')
+}
+
+export function canManageCompensation(
+  actor:
+    | Pick<Employee, 'employmentStatus' | 'assignedRole'>
+    | null
+    | undefined,
+): boolean {
+  return hasPermission(actor, 'compensation.manage')
+}
+
+export function canViewPayrollEntry(
+  actor:
+    | Pick<Employee, 'employeeId' | 'employmentStatus' | 'assignedRole'>
+    | null
+    | undefined,
+  targetEmployeeId: string,
+): boolean {
+  if (!isActiveActor(actor)) {
+    return false
+  }
+  if (hasPermission(actor, 'payroll.view')) {
+    return true
+  }
+  if (
+    hasPermission(actor, 'payroll.view_own') &&
+    normalizeEmployeeId(actor.employeeId) ===
+      normalizeEmployeeId(targetEmployeeId)
+  ) {
+    return true
+  }
+  return false
+}

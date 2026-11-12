@@ -1,85 +1,46 @@
 import type { Employee } from '../../types/employee'
+import { isBackendApiConfigured } from '../api/httpClient'
 import {
   employeeService as defaultEmployeeService,
   type EmployeeService,
   type StorageLike,
 } from '../employees/services/employeeService'
+import { createApiAuthService } from './authApiService'
+import {
+  AuthServiceError,
+  type AuthService,
+  type AuthServiceErrorCode,
+  type AuthSessionState,
+  type AuthStatus,
+  type DemoSession,
+} from './authTypes'
 import { DEMO_ACTING_EMPLOYEE_KEY } from './demoSession'
 import { isSessionExpired } from './securityAudit'
 
+export {
+  AuthServiceError,
+  type AuthService,
+  type AuthServiceErrorCode,
+  type AuthSessionState,
+  type AuthStatus,
+  type DemoSession,
+}
+
 /**
- * DEMO-ONLY AUTHENTICATION & SESSION SERVICE
+ * AUTHENTICATION & SESSION SERVICE
  *
- * Smart HR does not currently have a backend server or identity provider.
- * Demo sessions identify a synthetic or registered employee via localStorage
- * for workflow and RBAC demonstration only. They do NOT issue signed JWTs
- * or HTTP-only cookies and do NOT provide production authentication security.
+ * When VITE_API_BASE_URL is configured, connects to Laravel Sanctum API auth.
+ * Otherwise falls back cleanly to Demo-Only localStorage authentication so
+ * isolated Phases 1-6A frontend demos and automated suites continue working.
  */
 export const DEMO_AUTH_SESSION_KEY = 'smarthr.demo.session.v1'
 export const DEFAULT_DEMO_SESSION_TTL_MS = 8 * 60 * 60 * 1000 // 8 hours
-
-export interface DemoSession {
-  sessionId: string
-  employeeId: string
-  issuedAtUtc: string
-  expiresAtUtc: string
-}
-
-export type AuthStatus =
-  | 'loading'
-  | 'authenticated'
-  | 'unauthenticated'
-  | 'expired'
-
-export interface AuthSessionState {
-  status: Exclude<AuthStatus, 'loading'>
-  user: Employee | null
-  session: DemoSession | null
-}
-
-export type AuthServiceErrorCode =
-  | 'UNAUTHORIZED'
-  | 'EMPLOYEE_NOT_FOUND'
-  | 'EMPLOYEE_INACTIVE'
-  | 'PERSISTENCE_ERROR'
-
-export class AuthServiceError extends Error {
-  readonly code: AuthServiceErrorCode
-  readonly httpStatus: 401 | 403 | 404 | 500
-
-  constructor(
-    code: AuthServiceErrorCode,
-    message: string,
-    httpStatus?: 401 | 403 | 404 | 500,
-  ) {
-    super(message)
-    this.name = 'AuthServiceError'
-    this.code = code
-    this.httpStatus =
-      httpStatus ??
-      (code === 'EMPLOYEE_NOT_FOUND'
-        ? 404
-        : code === 'PERSISTENCE_ERROR'
-          ? 500
-          : 401)
-  }
-}
 
 export interface DemoAuthServiceOptions {
   employeeService?: EmployeeService
   storage?: StorageLike | null
   now?: () => Date
   defaultTtlMs?: number
-}
-
-export interface AuthService {
-  readonly isDemoMode: boolean
-  signIn(
-    employeeId: string,
-    ttlMs?: number,
-  ): Promise<{ user: Employee; session: DemoSession }>
-  signOut(): Promise<void>
-  getSessionState(): Promise<AuthSessionState>
 }
 
 function getDefaultStorage(): StorageLike | null {
@@ -270,5 +231,7 @@ export function createDemoAuthService(
   }
 }
 
-export const authService: AuthService = createDemoAuthService()
+export const authService: AuthService = isBackendApiConfigured()
+  ? createApiAuthService()
+  : createDemoAuthService()
 

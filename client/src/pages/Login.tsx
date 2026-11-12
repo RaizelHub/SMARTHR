@@ -38,12 +38,20 @@ export default function Login({
 
   const [profiles, setProfiles] = useState<DemoSignInProfile[]>([])
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('')
-  const [isLoadingProfiles, setIsLoadingProfiles] = useState<boolean>(true)
+  const [emailInput, setEmailInput] = useState<string>('')
+  const [passwordInput, setPasswordInput] = useState<string>('')
+  const [isLoadingProfiles, setIsLoadingProfiles] = useState<boolean>(
+    () => auth.isDemoMode,
+  )
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [authError, setAuthError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!auth.isDemoMode) {
+      return
+    }
+
     let cancelled = false
 
     empService
@@ -72,11 +80,34 @@ export default function Login({
     return () => {
       cancelled = true
     }
-  }, [empService])
+  }, [auth.isDemoMode, empService])
 
   async function handleSignInSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setAuthError(null)
+
+    if (!auth.isDemoMode) {
+      if (!emailInput.trim() || !passwordInput) {
+        setAuthError('Enter your work email and password to sign in.')
+        return
+      }
+
+      setIsSubmitting(true)
+      try {
+        await auth.signInWithCredentials(emailInput.trim(), passwordInput)
+        const destination = getSafeRedirectTarget(locationState?.from)
+        navigate(destination, { replace: true })
+      } catch (error: unknown) {
+        setAuthError(
+          error instanceof Error && error.message.trim().length > 0
+            ? error.message
+            : 'Invalid credentials or inactive account.',
+        )
+      } finally {
+        setIsSubmitting(false)
+      }
+      return
+    }
 
     if (!selectedEmployeeId) {
       setAuthError('Select a demo employee account before signing in.')
@@ -102,17 +133,22 @@ export default function Login({
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-8">
       <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6">
-        <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800">
-          Demo Authentication · Frontend-Only RBAC
-        </span>
+        {auth.isDemoMode ? (
+          <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800">
+            Demo Authentication · Frontend-Only RBAC
+          </span>
+        ) : (
+          <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">
+            Connected Laravel API · Sanctum Auth
+          </span>
+        )}
         <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-900">
           Sign In to Smart HR
         </h1>
         <p className="mt-2 text-sm text-slate-600">
-          Select a demo account to evaluate Role-Based Access Control across
-          Employee Management, Attendance, Leave Requests, and Role
-          Administration. Production deployments require backend authentication
-          and server-verified sessions.
+          {auth.isDemoMode
+            ? 'Select a demo account to evaluate Role-Based Access Control across Employee Management, Attendance, Leave Requests, and Role Administration. Production deployments require backend authentication and server-verified sessions.'
+            : 'Sign in with your Smart HR backend account credentials to access verified Philippine payroll calculation, approval workflows, and personal payslips.'}
         </p>
 
         {locationState?.reason === 'expired' && (
@@ -120,7 +156,9 @@ export default function Login({
             role="alert"
             className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900"
           >
-            Your previous demo session expired. Sign in again to continue.
+            {auth.isDemoMode
+              ? 'Your previous demo session expired. Sign in again to continue.'
+              : 'Your session expired. Sign in again to continue.'}
           </div>
         )}
 
@@ -141,7 +179,7 @@ export default function Login({
           <div className="mt-5 space-y-4 rounded-md border border-emerald-200 bg-emerald-50 p-4">
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-emerald-800">
-                Active Demo Session
+                {auth.isDemoMode ? 'Active Demo Session' : 'Active API Session'}
               </p>
               <p className="mt-1 text-sm font-semibold text-slate-900">
                 {auth.currentUser.fullName} ({auth.currentUser.employeeId})
@@ -188,41 +226,87 @@ export default function Login({
               </div>
             )}
 
-            <div>
-              <label
-                htmlFor="demo-account-select"
-                className="block text-sm font-medium text-slate-700"
-              >
-                Demo Account
-              </label>
-              <select
-                id="demo-account-select"
-                value={selectedEmployeeId}
-                disabled={isLoadingProfiles || isSubmitting}
-                onChange={(event) => {
-                  setSelectedEmployeeId(event.target.value)
-                  setAuthError(null)
-                }}
-                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
-              >
-                <option value="">
-                  {isLoadingProfiles
-                    ? 'Loading demo accounts...'
-                    : 'Select a demo employee account'}
-                </option>
-                {profiles.map((profile) => (
-                  <option key={profile.employeeId} value={profile.employeeId}>
-                    {profile.employeeId} — {profile.fullName} (
-                    {profile.assignedRole} · {profile.department} ·{' '}
-                    {profile.employmentStatus})
+            {auth.isDemoMode ? (
+              <div>
+                <label
+                  htmlFor="demo-account-select"
+                  className="block text-sm font-medium text-slate-700"
+                >
+                  Demo Account
+                </label>
+                <select
+                  id="demo-account-select"
+                  value={selectedEmployeeId}
+                  disabled={isLoadingProfiles || isSubmitting}
+                  onChange={(event) => {
+                    setSelectedEmployeeId(event.target.value)
+                    setAuthError(null)
+                  }}
+                  className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  <option value="">
+                    {isLoadingProfiles
+                      ? 'Loading demo accounts...'
+                      : 'Select a demo employee account'}
                   </option>
-                ))}
-              </select>
-            </div>
+                  {profiles.map((profile) => (
+                    <option key={profile.employeeId} value={profile.employeeId}>
+                      {profile.employeeId} — {profile.fullName} (
+                      {profile.assignedRole} · {profile.department} ·{' '}
+                      {profile.employmentStatus})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label
+                    htmlFor="login-email"
+                    className="block text-sm font-medium text-slate-700"
+                  >
+                    Work Email
+                  </label>
+                  <input
+                    id="login-email"
+                    type="email"
+                    autoComplete="email"
+                    value={emailInput}
+                    disabled={isSubmitting}
+                    onChange={(event) => {
+                      setEmailInput(event.target.value)
+                      setAuthError(null)
+                    }}
+                    placeholder="user@smarthr.local"
+                    className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="login-password"
+                    className="block text-sm font-medium text-slate-700"
+                  >
+                    Password
+                  </label>
+                  <input
+                    id="login-password"
+                    type="password"
+                    autoComplete="current-password"
+                    value={passwordInput}
+                    disabled={isSubmitting}
+                    onChange={(event) => {
+                      setPasswordInput(event.target.value)
+                      setAuthError(null)
+                    }}
+                    className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+              </div>
+            )}
 
             <button
               type="submit"
-              disabled={isLoadingProfiles || isSubmitting}
+              disabled={(auth.isDemoMode && isLoadingProfiles) || isSubmitting}
               className="w-full rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1"
             >
               {isSubmitting ? 'Signing In...' : 'Sign In'}
