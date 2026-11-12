@@ -2,12 +2,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import Leave from '../../../pages/Leave'
-import { createDemoEmployeeService } from '../../employees/services/employeeService'
+import type { Employee } from '../../../types/employee'
+import { AuthProvider } from '../../auth/AuthContext'
+import {
+  createDemoEmployeeService,
+  SYNTHETIC_DEMO_EMPLOYEES,
+} from '../../employees/services/employeeService'
 import {
   createDemoLeaveService,
   LeaveServiceError,
   type LeaveService,
 } from '../services/leaveService'
+
+const EMPLOYEE_JORDAN = SYNTHETIC_DEMO_EMPLOYEES.find(
+  (e) => e.employeeId === 'EMP-1001',
+)!
+const HR_PRIYA = SYNTHETIC_DEMO_EMPLOYEES.find(
+  (e) => e.employeeId === 'EMP-1002',
+)!
 
 function formatOffsetUtcDate(daysAhead: number): string {
   const now = new Date()
@@ -21,17 +33,19 @@ function formatOffsetUtcDate(daysAhead: number): string {
 }
 
 function renderLeavePage(options?: {
-  empService?: ReturnType<typeof createDemoEmployeeService>
   lvService?: LeaveService
-  initialActorEmployeeId?: string | null
+  actingUser?: Employee
 }) {
   return render(
     <MemoryRouter initialEntries={['/leave']}>
-      <Leave
-        empService={options?.empService}
-        lvService={options?.lvService}
-        initialActorEmployeeId={options?.initialActorEmployeeId}
-      />
+      <AuthProvider
+        initialAuthState={{
+          status: 'authenticated',
+          user: options?.actingUser ?? EMPLOYEE_JORDAN,
+        }}
+      >
+        <Leave lvService={options?.lvService} />
+      </AuthProvider>
     </MemoryRouter>,
   )
 }
@@ -55,7 +69,7 @@ describe('Leave Management request and approval integration workflow', () => {
     const startDate = formatOffsetUtcDate(5)
     const endDate = formatOffsetUtcDate(7)
 
-    const firstRender = renderLeavePage({ empService, lvService })
+    const firstRender = renderLeavePage({ lvService })
 
     await waitFor(() => {
       expect(screen.getByText('No leave requests submitted yet')).toBeTruthy()
@@ -132,7 +146,7 @@ describe('Leave Management request and approval integration workflow', () => {
       employeeService: empService,
       storage: window.localStorage,
     })
-    renderLeavePage({ empService, lvService: reloadedService })
+    renderLeavePage({ lvService: reloadedService })
 
     await waitFor(() => {
       expect(screen.getByText(`${startDate} to ${endDate}`)).toBeTruthy()
@@ -179,11 +193,10 @@ describe('Leave Management request and approval integration workflow', () => {
       { actorEmployeeId: 'EMP-1003' },
     )
 
-    // Render as HR Coordinator (EMP-1002)
+    // Render authenticated as HR Coordinator (EMP-1002)
     renderLeavePage({
-      empService,
       lvService,
-      initialActorEmployeeId: 'EMP-1002',
+      actingUser: HR_PRIYA,
     })
 
     await waitFor(() => {
@@ -230,7 +243,6 @@ describe('Leave Management request and approval integration workflow', () => {
   })
 
   it('displays error banner without false success when leave submission request fails', async () => {
-    const empService = createDemoEmployeeService(window.localStorage)
     const failingLvService: LeaveService = {
       isDemoMode: true,
       businessTimezone: 'Asia/Manila',
@@ -249,7 +261,7 @@ describe('Leave Management request and approval integration workflow', () => {
       clearLeaveRequests: vi.fn().mockResolvedValue([]),
     }
 
-    renderLeavePage({ empService, lvService: failingLvService })
+    renderLeavePage({ lvService: failingLvService })
 
     await waitFor(() => {
       expect(screen.getByText('No leave requests submitted yet')).toBeTruthy()

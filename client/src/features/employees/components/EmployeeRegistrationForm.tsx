@@ -20,6 +20,7 @@ interface EmployeeRegistrationFormProps {
   existingEmployees: readonly Employee[]
   onRegister: (input: CreateEmployeeInput) => Promise<Employee>
   autoFocusFirstField?: boolean
+  canAssignHrAdmin?: boolean
 }
 
 const DEFAULT_FORM_VALUES: EmployeeFormInput = {
@@ -45,10 +46,18 @@ export default function EmployeeRegistrationForm({
   existingEmployees,
   onRegister,
   autoFocusFirstField = false,
+  canAssignHrAdmin = false,
 }: EmployeeRegistrationFormProps) {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [successNotice, setSuccessNotice] = useState<string | null>(null)
   const firstInputRef = useRef<HTMLInputElement | null>(null)
+  const assignableRoles = useMemo(
+    () =>
+      canAssignHrAdmin
+        ? ASSIGNED_ROLES
+        : ASSIGNED_ROLES.filter((role) => role !== 'HR Admin'),
+    [canAssignHrAdmin],
+  )
 
   const schema = useMemo(
     () => createEmployeeRegistrationSchema({ existingEmployees }),
@@ -407,18 +416,18 @@ export default function EmployeeRegistrationForm({
               id="assigned-role"
               aria-invalid={Boolean(errors.assignedRole)}
               aria-describedby={
-                errors.assignedRole ? 'assigned-role-error' : undefined
+                errors.assignedRole ? 'assigned-role-error' : 'assigned-role-hint'
               }
               className={getInputClasses(Boolean(errors.assignedRole))}
               {...register('assignedRole')}
             >
-              {ASSIGNED_ROLES.map((role) => (
+              {assignableRoles.map((role) => (
                 <option key={role} value={role}>
                   {role}
                 </option>
               ))}
             </select>
-            {errors.assignedRole && (
+            {errors.assignedRole ? (
               <p
                 id="assigned-role-error"
                 role="alert"
@@ -426,7 +435,11 @@ export default function EmployeeRegistrationForm({
               >
                 {errors.assignedRole.message}
               </p>
-            )}
+            ) : !canAssignHrAdmin ? (
+              <p id="assigned-role-hint" className="mt-1 text-xs text-slate-500">
+                Assigning the HR Admin role requires an existing HR Admin.
+              </p>
+            ) : null}
           </div>
         </div>
 

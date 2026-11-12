@@ -7,7 +7,10 @@ import {
   type LeaveRequestStatus,
 } from '../../../types/leave'
 import { formatDateTimeInBusinessZone } from '../../attendance/utils/timeZone'
-import { canReviewerActOnRequest } from '../services/leaveService'
+import {
+  canApproveOrRejectLeave,
+  hasPermission,
+} from '../../auth/permissions'
 import { LEAVE_FIELD_LIMITS } from '../validation/leaveSchema'
 import { getLeaveStatusBadgeClasses } from '../utils/leaveStatusBadge'
 
@@ -86,9 +89,9 @@ export default function LeaveReviewQueue({
             </span>
           </div>
           <p className="mt-1 text-sm text-slate-600">
-            {reviewer.assignedRole === 'Manager'
-              ? `Department scope: ${reviewer.department}. Reviewers cannot approve or reject their own requests.`
-              : `HR organization scope (${reviewer.assignedRole}). Reviewers cannot approve or reject their own requests.`}
+            {hasPermission(reviewer, 'leave.read_all')
+              ? `HR organization scope (${reviewer.assignedRole}). Reviewers cannot approve or reject their own requests.`
+              : `Department scope: ${reviewer.department}. Reviewers cannot approve or reject their own requests.`}
           </p>
         </div>
 
@@ -138,7 +141,7 @@ export default function LeaveReviewQueue({
       ) : (
         <div className="mt-4 space-y-4">
           {filteredRequests.map((request) => {
-            const eligibility = canReviewerActOnRequest(reviewer, request)
+            const eligibility = canApproveOrRejectLeave(reviewer, request)
             const isBusy = busyRequestId === request.id
             const isConfirming = pendingDecision?.requestId === request.id
             const noteValue = notesByRequestId[request.id] ?? ''

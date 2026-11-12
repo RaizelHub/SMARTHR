@@ -2,25 +2,42 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import Attendance from '../../../pages/Attendance'
-import { createDemoEmployeeService } from '../../employees/services/employeeService'
+import type { Employee } from '../../../types/employee'
+import { AuthProvider } from '../../auth/AuthContext'
+import {
+  createDemoEmployeeService,
+  SYNTHETIC_DEMO_EMPLOYEES,
+} from '../../employees/services/employeeService'
 import {
   AttendanceServiceError,
   createDemoAttendanceService,
   type AttendanceService,
 } from '../services/attendanceService'
 
+const EMPLOYEE_JORDAN = SYNTHETIC_DEMO_EMPLOYEES.find(
+  (e) => e.employeeId === 'EMP-1001',
+)!
+const EMPLOYEE_MARCUS = SYNTHETIC_DEMO_EMPLOYEES.find(
+  (e) => e.employeeId === 'EMP-1003',
+)!
+const HR_PRIYA = SYNTHETIC_DEMO_EMPLOYEES.find(
+  (e) => e.employeeId === 'EMP-1002',
+)!
+
 function renderAttendancePage(options?: {
-  empService?: ReturnType<typeof createDemoEmployeeService>
   attService?: AttendanceService
-  initialActorEmployeeId?: string | null
+  actingUser?: Employee
 }) {
   return render(
     <MemoryRouter initialEntries={['/attendance']}>
-      <Attendance
-        empService={options?.empService}
-        attService={options?.attService}
-        initialActorEmployeeId={options?.initialActorEmployeeId}
-      />
+      <AuthProvider
+        initialAuthState={{
+          status: 'authenticated',
+          user: options?.actingUser ?? EMPLOYEE_JORDAN,
+        }}
+      >
+        <Attendance attService={options?.attService} />
+      </AuthProvider>
     </MemoryRouter>,
   )
 }
@@ -44,7 +61,7 @@ describe('Attendance Clock-In and Clock-Out integration workflow', () => {
       now: () => currentTime,
     })
 
-    const firstRender = renderAttendancePage({ empService, attService })
+    const firstRender = renderAttendancePage({ attService })
 
     await waitFor(() => {
       expect(screen.getByText('Not Clocked In')).toBeTruthy()
@@ -85,7 +102,7 @@ describe('Attendance Clock-In and Clock-Out integration workflow', () => {
       now: () => currentTime,
     })
 
-    renderAttendancePage({ empService, attService: refreshedService })
+    renderAttendancePage({ attService: refreshedService })
 
     await waitFor(() => {
       expect(screen.getByText('Active shift in progress')).toBeTruthy()
@@ -114,7 +131,7 @@ describe('Attendance Clock-In and Clock-Out integration workflow', () => {
     ).toBe(true)
   })
 
-  it('isolates attendance records per employee and switches active session with acting demo employee', async () => {
+  it('isolates attendance records per employee and restricts oversight by authenticated role', async () => {
     const empService = createDemoEmployeeService(window.localStorage)
     const attService = createDemoAttendanceService({
       employeeService: empService,
@@ -122,7 +139,10 @@ describe('Attendance Clock-In and Clock-Out integration workflow', () => {
       now: () => new Date('2026-11-12T01:00:00.000Z'),
     })
 
-    renderAttendancePage({ empService, attService })
+    const jordanRender = renderAttendancePage({
+      attService,
+      actingUser: EMPLOYEE_JORDAN,
+    })
 
     await waitFor(() => {
       expect(screen.getByText('Not Clocked In')).toBeTruthy()
@@ -134,9 +154,12 @@ describe('Attendance Clock-In and Clock-Out integration workflow', () => {
       expect(screen.getByText('Active shift in progress')).toBeTruthy()
     })
 
-    // Switch acting demo user to Marcus Chen (EMP-1003, role: Employee)
-    fireEvent.change(screen.getByLabelText('Acting Demo Employee'), {
-      target: { value: 'EMP-1003' },
+    jordanRender.unmount()
+
+    // Sign in as Marcus Chen (EMP-1003, role: Employee)
+    const marcusRender = renderAttendancePage({
+      attService,
+      actingUser: EMPLOYEE_MARCUS,
     })
 
     await waitFor(() => {
@@ -148,9 +171,12 @@ describe('Attendance Clock-In and Clock-Out integration workflow', () => {
       screen.getByText('No attendance records recorded yet'),
     ).toBeTruthy()
 
-    // Switch to Priya Nair (EMP-1002, role: HR Coordinator) to verify HR directory scope
-    fireEvent.change(screen.getByLabelText('Acting Demo Employee'), {
-      target: { value: 'EMP-1002' },
+    marcusRender.unmount()
+
+    // Sign in as Priya Nair (EMP-1002, role: HR Coordinator) to verify HR directory scope
+    renderAttendancePage({
+      attService,
+      actingUser: HR_PRIYA,
     })
 
     await waitFor(() => {
@@ -159,8 +185,6 @@ describe('Attendance Clock-In and Clock-Out integration workflow', () => {
   })
 
   it('displays error banner without falsely showing success when clock-in or clock-out request fails', async () => {
-    const empService = createDemoEmployeeService(window.localStorage)
-
     const failingAttService: AttendanceService = {
       isDemoMode: true,
       businessTimezone: 'Asia/Manila',
@@ -178,7 +202,7 @@ describe('Attendance Clock-In and Clock-Out integration workflow', () => {
       clearAttendanceRecords: vi.fn().mockResolvedValue([]),
     }
 
-    renderAttendancePage({ empService, attService: failingAttService })
+    renderAttendancePage({ attService: failingAttService })
 
     await waitFor(() => {
       expect(screen.getByText('Not Clocked In')).toBeTruthy()
@@ -198,7 +222,6 @@ describe('Attendance Clock-In and Clock-Out integration workflow', () => {
   })
 
   it('keeps active session and displays error banner when clock-out request fails', async () => {
-    const empService = createDemoEmployeeService(window.localStorage)
     const activeRecord = {
       id: 'att-active-1',
       employeeId: 'EMP-1001',
@@ -230,7 +253,7 @@ describe('Attendance Clock-In and Clock-Out integration workflow', () => {
       clearAttendanceRecords: vi.fn().mockResolvedValue([]),
     }
 
-    renderAttendancePage({ empService, attService: failingClockOutService })
+    renderAttendancePage({ attService: failingClockOutService })
 
     await waitFor(() => {
       expect(screen.getByText('Active shift in progress')).toBeTruthy()

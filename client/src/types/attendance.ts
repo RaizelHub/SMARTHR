@@ -29,5 +29,6 @@ export interface ClockOutInput {
 
 export interface AttendanceActorContext {
   actorEmployeeId: string | null | undefined
+  sessionExpiresAtUtc?: string | null
 }
 

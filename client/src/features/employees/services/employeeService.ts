@@ -1,4 +1,19 @@
-import type { CreateEmployeeInput, Employee } from '../../../types/employee'
+import {
+  ASSIGNED_ROLES,
+  type AssignedRole,
+  type CreateEmployeeInput,
+  type Employee,
+} from '../../../types/employee'
+import {
+  canAccessEmployeeRecord,
+  hasPermission,
+} from '../../auth/permissions'
+import {
+  appendSecurityAuditEvent,
+  isSessionExpired,
+  readSecurityAuditEvents,
+  type SecurityAuditEntry,
+} from '../../auth/securityAudit'
 import {
   createBaseEmployeeSchema,
   normalizeEmployeeId,
@@ -10,7 +25,8 @@ import {
  *
  * Smart HR does not currently have a backend server or database connected.
  * Employee records created here are persisted solely in browser localStorage
- * for demonstration and Phase 1 workflow verification.
+ * for demonstration. Client-side RBAC checks mirror target server rules but
+ * are NOT a substitute for server-side HTTP 401/403 enforcement.
  */
 export const DEMO_EMPLOYEES_STORAGE_KEY = 'smarthr.demo.employees.v1'
 
@@ -20,25 +36,58 @@ export interface StorageLike {
   removeItem(key: string): void
 }
 
+export interface EmployeeActorContext {
+  actorEmployeeId: string | null | undefined
+  sessionExpiresAtUtc?: string | null
+}
+
+export interface DemoSignInProfile {
+  employeeId: string
+  fullName: string
+  department: Employee['department']
+  assignedRole: AssignedRole
+  employmentStatus: Employee['employmentStatus']
+}
+
+export interface UpdateEmployeeRoleInput {
+  targetEmployeeId: string
+  newRole: AssignedRole
+}
+
 export type EmployeeServiceErrorCode =
+  | 'UNAUTHORIZED'
   | 'VALIDATION_ERROR'
   | 'DUPLICATE_EMPLOYEE_ID'
   | 'DUPLICATE_WORK_EMAIL'
+  | 'EMPLOYEE_NOT_FOUND'
   | 'PERSISTENCE_ERROR'
 
 export class EmployeeServiceError extends Error {
   readonly code: EmployeeServiceErrorCode
+  readonly httpStatus: 400 | 401 | 403 | 404 | 409 | 500
   readonly fieldErrors?: Partial<Record<keyof CreateEmployeeInput, string>>
 
   constructor(
     code: EmployeeServiceErrorCode,
     message: string,
     fieldErrors?: Partial<Record<keyof CreateEmployeeInput, string>>,
+    httpStatus?: 400 | 401 | 403 | 404 | 409 | 500,
   ) {
     super(message)
     this.name = 'EmployeeServiceError'
     this.code = code
     this.fieldErrors = fieldErrors
+    this.httpStatus =
+      httpStatus ??
+      (code === 'UNAUTHORIZED'
+        ? 403
+        : code === 'VALIDATION_ERROR'
+          ? 400
+          : code === 'EMPLOYEE_NOT_FOUND'
+            ? 404
+            : code === 'PERSISTENCE_ERROR'
+              ? 500
+              : 409)
   }
 }
 
@@ -79,14 +128,51 @@ export const SYNTHETIC_DEMO_EMPLOYEES: readonly Employee[] = [
     assignedRole: 'Employee',
     createdAt: '2026-09-14T09:00:00.000Z',
   },
+  {
+    id: 'demo-emp-1004',
+    employeeId: 'EMP-1004',
+    fullName: 'Dana Reyes',
+    workEmail: 'dana.reyes@smarthr.demo',
+    department: 'Engineering',
+    position: 'Engineering Manager',
+    employmentStatus: 'Active',
+    hireDate: '2022-05-10',
+    assignedRole: 'Manager',
+    createdAt: '2022-05-10T09:00:00.000Z',
+  },
+  {
+    id: 'demo-emp-1005',
+    employeeId: 'EMP-1005',
+    fullName: 'Alex Rivera',
+    workEmail: 'alex.rivera@smarthr.demo',
+    department: 'Human Resources',
+    position: 'HR Systems Administrator',
+    employmentStatus: 'Active',
+    hireDate: '2021-08-02',
+    assignedRole: 'HR Admin',
+    createdAt: '2021-08-02T09:00:00.000Z',
+  },
 ]
 
 export interface EmployeeService {
   readonly isDemoMode: boolean
-  listEmployees(): Promise<Employee[]>
-  createEmployee(input: CreateEmployeeInput): Promise<Employee>
-  clearEmployees(): Promise<Employee[]>
-  resetDemoEmployees(): Promise<Employee[]>
+  listDemoSignInProfiles(): Promise<DemoSignInProfile[]>
+  resolveEmployeeForAuth(employeeId: string): Promise<Employee | null>
+  listAllDirectoryForServiceInternal(): Promise<Employee[]>
+  listEmployees(actor: EmployeeActorContext): Promise<Employee[]>
+  createEmployee(
+    input: CreateEmployeeInput,
+    actor: EmployeeActorContext,
+  ): Promise<Employee>
+  updateEmployeeRole(
+    input: UpdateEmployeeRoleInput,
+    actor: EmployeeActorContext,
+  ): Promise<Employee>
+  listSecurityAuditEvents(
+    actor: EmployeeActorContext,
+  ): Promise<SecurityAuditEntry[]>
+  clearEmployees(actor: EmployeeActorContext): Promise<Employee[]>
+  resetDemoEmployees(actor: EmployeeActorContext): Promise<Employee[]>
 }
 
 function getDefaultStorage(): StorageLike | null {
@@ -131,6 +217,7 @@ function cloneSeedEmployees(): Employee[] {
 
 export function createDemoEmployeeService(
   customStorage?: StorageLike | null,
+  now: () => Date = () => new Date(),
 ): EmployeeService {
   let fallbackMemoryStore: Employee[] | null = null
 
@@ -199,14 +286,102 @@ export function createDemoEmployeeService(
     }
   }
 
+  function resolveAuthenticatedActor(
+    actor: EmployeeActorContext | null | undefined,
+  ): { actorEmployee: Employee; allEmployees: Employee[] } {
+    const rawActorId = actor?.actorEmployeeId?.trim() ?? ''
+    if (!rawActorId) {
+      throw new EmployeeServiceError(
+        'UNAUTHORIZED',
+        'Authentication is required to access employee management.',
+        undefined,
+        401,
+      )
+    }
+
+    if (isSessionExpired(actor?.sessionExpiresAtUtc, now())) {
+      throw new EmployeeServiceError(
+        'UNAUTHORIZED',
+        'Your session has expired. Please sign in again.',
+        undefined,
+        401,
+      )
+    }
+
+    const allEmployees = readStoredEmployees()
+    const actorKey = normalizeEmployeeId(rawActorId)
+    const actorPool =
+      allEmployees.length > 0 ? allEmployees : SYNTHETIC_DEMO_EMPLOYEES
+    const actorEmployee = actorPool.find(
+      (employee) => normalizeEmployeeId(employee.employeeId) === actorKey,
+    )
+
+    if (!actorEmployee || actorEmployee.employmentStatus === 'Inactive') {
+      throw new EmployeeServiceError(
+        'UNAUTHORIZED',
+        'Current session does not belong to an active employee account.',
+        undefined,
+        401,
+      )
+    }
+
+    return { actorEmployee, allEmployees }
+  }
+
   return {
     isDemoMode: true,
 
-    async listEmployees(): Promise<Employee[]> {
+    async listDemoSignInProfiles(): Promise<DemoSignInProfile[]> {
+      const stored = readStoredEmployees()
+      const pool = stored.length > 0 ? stored : SYNTHETIC_DEMO_EMPLOYEES
+      return pool.map((employee) => ({
+        employeeId: employee.employeeId,
+        fullName: employee.fullName,
+        department: employee.department,
+        assignedRole: employee.assignedRole,
+        employmentStatus: employee.employmentStatus,
+      }))
+    },
+
+    async resolveEmployeeForAuth(employeeId: string): Promise<Employee | null> {
+      const targetKey = normalizeEmployeeId(employeeId)
+      if (!targetKey) {
+        return null
+      }
+      const stored = readStoredEmployees()
+      const pool = stored.length > 0 ? stored : SYNTHETIC_DEMO_EMPLOYEES
+      const match = pool.find(
+        (employee) => normalizeEmployeeId(employee.employeeId) === targetKey,
+      )
+      return match ? { ...match } : null
+    },
+
+    async listAllDirectoryForServiceInternal(): Promise<Employee[]> {
       return readStoredEmployees()
     },
 
-    async createEmployee(input: CreateEmployeeInput): Promise<Employee> {
+    async listEmployees(actor: EmployeeActorContext): Promise<Employee[]> {
+      const { actorEmployee, allEmployees } = resolveAuthenticatedActor(actor)
+      return allEmployees.filter((employee) =>
+        canAccessEmployeeRecord(actorEmployee, employee),
+      )
+    },
+
+    async createEmployee(
+      input: CreateEmployeeInput,
+      actor: EmployeeActorContext,
+    ): Promise<Employee> {
+      const { actorEmployee } = resolveAuthenticatedActor(actor)
+
+      if (!hasPermission(actorEmployee, 'employees.create')) {
+        throw new EmployeeServiceError(
+          'UNAUTHORIZED',
+          'You do not have permission to register new employees.',
+          undefined,
+          403,
+        )
+      }
+
       const parsed = createBaseEmployeeSchema().safeParse(input)
       if (!parsed.success) {
         const fieldErrors: Partial<Record<keyof CreateEmployeeInput, string>> = {}
@@ -220,6 +395,22 @@ export function createDemoEmployeeService(
           'VALIDATION_ERROR',
           'Please fix the highlighted employee registration errors before submitting.',
           fieldErrors,
+          400,
+        )
+      }
+
+      if (
+        parsed.data.assignedRole === 'HR Admin' &&
+        !hasPermission(actorEmployee, 'roles.manage')
+      ) {
+        throw new EmployeeServiceError(
+          'UNAUTHORIZED',
+          'Only an HR Admin can assign the HR Admin role during registration.',
+          {
+            assignedRole:
+              'Only an HR Admin can assign the HR Admin role during registration.',
+          },
+          403,
         )
       }
 
@@ -257,7 +448,7 @@ export function createDemoEmployeeService(
         employmentStatus: parsed.data.employmentStatus,
         hireDate: parsed.data.hireDate,
         assignedRole: parsed.data.assignedRole,
-        createdAt: new Date().toISOString(),
+        createdAt: now().toISOString(),
       }
 
       const updated = [created, ...existing]
@@ -265,18 +456,191 @@ export function createDemoEmployeeService(
       return created
     },
 
-    async clearEmployees(): Promise<Employee[]> {
+    async updateEmployeeRole(
+      input: UpdateEmployeeRoleInput,
+      actor: EmployeeActorContext,
+    ): Promise<Employee> {
+      const storage = resolveStorage()
+      let actorEmployee: Employee
+      let allEmployees: Employee[]
+
+      try {
+        const resolved = resolveAuthenticatedActor(actor)
+        actorEmployee = resolved.actorEmployee
+        allEmployees = resolved.allEmployees
+      } catch (error) {
+        appendSecurityAuditEvent(
+          {
+            eventType: 'ROLE_CHANGE_DENIED',
+            actorEmployeeId: actor?.actorEmployeeId?.trim() || 'Anonymous',
+            actorRole: 'Unauthenticated',
+            targetEmployeeId: input.targetEmployeeId,
+            summary: 'Unauthenticated or expired session attempted role change',
+            timestampUtc: now().toISOString(),
+          },
+          storage,
+        )
+        throw error
+      }
+
+      if (!hasPermission(actorEmployee, 'roles.manage')) {
+        appendSecurityAuditEvent(
+          {
+            eventType: 'ROLE_CHANGE_DENIED',
+            actorEmployeeId: actorEmployee.employeeId,
+            actorRole: actorEmployee.assignedRole,
+            targetEmployeeId: input.targetEmployeeId,
+            summary: `Denied attempt to assign role "${input.newRole}"`,
+            timestampUtc: now().toISOString(),
+          },
+          storage,
+        )
+        throw new EmployeeServiceError(
+          'UNAUTHORIZED',
+          'Only an HR Admin can change employee roles.',
+          undefined,
+          403,
+        )
+      }
+
+      if (!ASSIGNED_ROLES.includes(input.newRole)) {
+        throw new EmployeeServiceError(
+          'VALIDATION_ERROR',
+          `Invalid role "${String(input.newRole)}" specified.`,
+          undefined,
+          400,
+        )
+      }
+
+      const targetKey = normalizeEmployeeId(input.targetEmployeeId)
+      const targetIndex = allEmployees.findIndex(
+        (employee) => normalizeEmployeeId(employee.employeeId) === targetKey,
+      )
+
+      if (targetIndex === -1) {
+        throw new EmployeeServiceError(
+          'EMPLOYEE_NOT_FOUND',
+          `Employee "${input.targetEmployeeId}" was not found.`,
+          undefined,
+          404,
+        )
+      }
+
+      const targetEmployee = allEmployees[targetIndex]
+
+      if (
+        targetEmployee.assignedRole === 'HR Admin' &&
+        input.newRole !== 'HR Admin'
+      ) {
+        const remainingActiveAdmins = allEmployees.filter(
+          (employee) =>
+            employee.assignedRole === 'HR Admin' &&
+            employee.employmentStatus !== 'Inactive' &&
+            normalizeEmployeeId(employee.employeeId) !== targetKey,
+        )
+
+        if (remainingActiveAdmins.length === 0) {
+          throw new EmployeeServiceError(
+            'VALIDATION_ERROR',
+            'Cannot remove HR Admin privileges from the last active administrator.',
+            undefined,
+            400,
+          )
+        }
+      }
+
+      const updatedEmployee: Employee = {
+        ...targetEmployee,
+        assignedRole: input.newRole,
+      }
+
+      writeStoredEmployees(
+        allEmployees.map((employee, idx) =>
+          idx === targetIndex ? updatedEmployee : employee,
+        ),
+      )
+
+      appendSecurityAuditEvent(
+        {
+          eventType: 'ROLE_CHANGED',
+          actorEmployeeId: actorEmployee.employeeId,
+          actorRole: actorEmployee.assignedRole,
+          targetEmployeeId: updatedEmployee.employeeId,
+          summary: `Updated role from ${targetEmployee.assignedRole} to ${input.newRole}`,
+          timestampUtc: now().toISOString(),
+        },
+        storage,
+      )
+
+      return updatedEmployee
+    },
+
+    async listSecurityAuditEvents(
+      actor: EmployeeActorContext,
+    ): Promise<SecurityAuditEntry[]> {
+      const { actorEmployee } = resolveAuthenticatedActor(actor)
+      if (!hasPermission(actorEmployee, 'roles.manage')) {
+        throw new EmployeeServiceError(
+          'UNAUTHORIZED',
+          'Only an HR Admin can inspect the security audit log.',
+          undefined,
+          403,
+        )
+      }
+      return readSecurityAuditEvents(resolveStorage())
+    },
+
+    async clearEmployees(actor: EmployeeActorContext): Promise<Employee[]> {
+      const { actorEmployee } = resolveAuthenticatedActor(actor)
+      if (!hasPermission(actorEmployee, 'employees.delete')) {
+        throw new EmployeeServiceError(
+          'UNAUTHORIZED',
+          'Only an HR Admin can clear demo employee records.',
+          undefined,
+          403,
+        )
+      }
       writeStoredEmployees([])
+      appendSecurityAuditEvent(
+        {
+          eventType: 'DIRECTORY_CLEARED',
+          actorEmployeeId: actorEmployee.employeeId,
+          actorRole: actorEmployee.assignedRole,
+          targetEmployeeId: null,
+          summary: 'Cleared demo employee directory',
+          timestampUtc: now().toISOString(),
+        },
+        resolveStorage(),
+      )
       return []
     },
 
-    async resetDemoEmployees(): Promise<Employee[]> {
+    async resetDemoEmployees(actor: EmployeeActorContext): Promise<Employee[]> {
+      const { actorEmployee } = resolveAuthenticatedActor(actor)
+      if (!hasPermission(actorEmployee, 'employees.delete')) {
+        throw new EmployeeServiceError(
+          'UNAUTHORIZED',
+          'Only an HR Admin can reset demo employee records.',
+          undefined,
+          403,
+        )
+      }
       const seeded = cloneSeedEmployees()
       writeStoredEmployees(seeded)
+      appendSecurityAuditEvent(
+        {
+          eventType: 'DIRECTORY_RESET',
+          actorEmployeeId: actorEmployee.employeeId,
+          actorRole: actorEmployee.assignedRole,
+          targetEmployeeId: null,
+          summary: 'Reset demo employee directory to synthetic defaults',
+          timestampUtc: now().toISOString(),
+        },
+        resolveStorage(),
+      )
       return seeded
     },
   }
 }
 
 export const employeeService: EmployeeService = createDemoEmployeeService()
-

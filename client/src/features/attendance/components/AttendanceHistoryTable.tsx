@@ -14,11 +14,13 @@ interface AttendanceHistoryTableProps {
   records: readonly AttendanceRecord[]
   isLoading: boolean
   loadError: string | null
-  isHrOversightView: boolean
+  visibilityScope: 'own' | 'team' | 'all'
+  actingDepartment?: string | null
   actingEmployeeLabel: string | null
+  canClearDemoRecords?: boolean
   isActionBusy?: boolean
   onRetryLoad: () => void
-  onClearDemoRecords: () => void
+  onClearDemoRecords?: () => void
 }
 
 function getStatusBadgeClasses(status: AttendanceStatus): string {
@@ -33,8 +35,10 @@ export default function AttendanceHistoryTable({
   records,
   isLoading,
   loadError,
-  isHrOversightView,
+  visibilityScope,
+  actingDepartment = null,
   actingEmployeeLabel,
+  canClearDemoRecords = false,
   isActionBusy = false,
   onRetryLoad,
   onClearDemoRecords,
@@ -58,22 +62,26 @@ export default function AttendanceHistoryTable({
             </span>
           </div>
           <p className="mt-1 text-sm text-slate-600">
-            {isHrOversightView
+            {visibilityScope === 'all'
               ? 'HR directory scope: viewing attendance records across all registered employees.'
-              : actingEmployeeLabel
-                ? `Personal scope: showing only attendance records for ${actingEmployeeLabel}.`
-                : 'Select an employee session above to inspect attendance records.'}
+              : visibilityScope === 'team'
+                ? `Department scope (${actingDepartment ?? ''}): viewing attendance records for your department.`
+                : actingEmployeeLabel
+                  ? `Personal scope: showing only attendance records for ${actingEmployeeLabel}.`
+                  : 'Sign in with an active employee account to inspect attendance records.'}
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={onClearDemoRecords}
-          disabled={isLoading || isActionBusy || records.length === 0}
-          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-blue-600"
-        >
-          Clear Demo Attendance
-        </button>
+        {canClearDemoRecords && onClearDemoRecords && (
+          <button
+            type="button"
+            onClick={onClearDemoRecords}
+            disabled={isLoading || isActionBusy || records.length === 0}
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-blue-600"
+          >
+            Clear Demo Attendance
+          </button>
+        )}
       </div>
 
       {isLoading && (

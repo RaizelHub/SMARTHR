@@ -219,16 +219,19 @@ describe('attendanceService business logic and security', () => {
     const storage = createMemoryStorage()
     const empService = createDemoEmployeeService(storage)
 
-    await empService.createEmployee({
-      employeeId: 'EMP-2001',
-      fullName: 'Inactive Worker',
-      workEmail: 'inactive.worker@smarthr.demo',
-      department: 'Operations',
-      position: 'Coordinator',
-      employmentStatus: 'Inactive',
-      hireDate: '2026-01-10',
-      assignedRole: 'Employee',
-    })
+    await empService.createEmployee(
+      {
+        employeeId: 'EMP-2001',
+        fullName: 'Inactive Worker',
+        workEmail: 'inactive.worker@smarthr.demo',
+        department: 'Operations',
+        position: 'Coordinator',
+        employmentStatus: 'Inactive',
+        hireDate: '2026-01-10',
+        assignedRole: 'Employee',
+      },
+      { actorEmployeeId: 'EMP-1002' },
+    )
 
     const service = createDemoAttendanceService({
       employeeService: empService,
@@ -251,9 +254,9 @@ describe('attendanceService business logic and security', () => {
     const baseEmpService = createDemoEmployeeService(storage)
     const delayedEmpService: EmployeeService = {
       ...baseEmpService,
-      async listEmployees() {
+      async listAllDirectoryForServiceInternal() {
         await new Promise((resolve) => setTimeout(resolve, 15))
-        return baseEmpService.listEmployees()
+        return baseEmpService.listAllDirectoryForServiceInternal()
       },
     }
 

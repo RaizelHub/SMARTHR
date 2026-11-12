@@ -7,6 +7,12 @@ import {
 } from '../../../types/attendance'
 import type { Employee } from '../../../types/employee'
 import {
+  canViewAttendanceRecord,
+  hasAnyPermission,
+  hasPermission,
+} from '../../auth/permissions'
+import { isSessionExpired } from '../../auth/securityAudit'
+import {
   employeeService as defaultEmployeeService,
   type EmployeeService,
   type StorageLike,
@@ -40,11 +46,27 @@ export type AttendanceServiceErrorCode =
 
 export class AttendanceServiceError extends Error {
   readonly code: AttendanceServiceErrorCode
+  readonly httpStatus: 400 | 401 | 403 | 404 | 409 | 500
 
-  constructor(code: AttendanceServiceErrorCode, message: string) {
+  constructor(
+    code: AttendanceServiceErrorCode,
+    message: string,
+    httpStatus?: 400 | 401 | 403 | 404 | 409 | 500,
+  ) {
     super(message)
     this.name = 'AttendanceServiceError'
     this.code = code
+    this.httpStatus =
+      httpStatus ??
+      (code === 'UNAUTHORIZED' || code === 'EMPLOYEE_INACTIVE'
+        ? 403
+        : code === 'EMPLOYEE_NOT_FOUND' || code === 'NO_ACTIVE_SESSION'
+          ? 404
+          : code === 'INVALID_TIMESTAMP_ORDER'
+            ? 400
+            : code === 'PERSISTENCE_ERROR'
+              ? 500
+              : 409)
   }
 }
 
@@ -72,7 +94,9 @@ export interface AttendanceService {
     input: ClockOutInput,
     actor: AttendanceActorContext,
   ): Promise<AttendanceRecord>
-  clearAttendanceRecords(): Promise<AttendanceRecord[]>
+  clearAttendanceRecords(
+    actor: AttendanceActorContext,
+  ): Promise<AttendanceRecord[]>
 }
 
 function getDefaultStorage(): StorageLike | null {
@@ -110,13 +134,6 @@ function isAttendanceRecord(value: unknown): value is AttendanceRecord {
     typeof record.businessTimezone === 'string' &&
     typeof record.createdAtUtc === 'string' &&
     typeof record.updatedAtUtc === 'string'
-  )
-}
-
-function isHrOversightRole(employee: Employee): boolean {
-  return (
-    employee.assignedRole === 'HR Admin' ||
-    employee.assignedRole === 'HR Coordinator'
   )
 }
 
@@ -221,10 +238,19 @@ export function createDemoAttendanceService(
       throw new AttendanceServiceError(
         'UNAUTHORIZED',
         'An authenticated employee session is required to access attendance.',
+        401,
       )
     }
 
-    const allEmployees = await empService.listEmployees()
+    if (isSessionExpired(actor.sessionExpiresAtUtc, now())) {
+      throw new AttendanceServiceError(
+        'UNAUTHORIZED',
+        'Your session has expired. Please sign in again.',
+        401,
+      )
+    }
+
+    const allEmployees = await empService.listAllDirectoryForServiceInternal()
     const normalizedActorId = normalizeEmployeeId(rawActorId)
     const actorEmployee = allEmployees.find(
       (employee) => normalizeEmployeeId(employee.employeeId) === normalizedActorId,
@@ -234,6 +260,15 @@ export function createDemoAttendanceService(
       throw new AttendanceServiceError(
         'UNAUTHORIZED',
         'Current session identity does not match an active employee record.',
+        401,
+      )
+    }
+
+    if (actorEmployee.employmentStatus === 'Inactive') {
+      throw new AttendanceServiceError(
+        'EMPLOYEE_INACTIVE',
+        'Inactive employees cannot access attendance actions.',
+        403,
       )
     }
 
@@ -243,8 +278,17 @@ export function createDemoAttendanceService(
   async function resolveSelfServiceTarget(
     targetEmployeeId: string,
     actor: AttendanceActorContext,
+    requiredPermission: 'attendance.read_own' | 'attendance.record_own',
   ): Promise<Employee> {
     const { actorEmployee, allEmployees } = await resolveAuthorizedActor(actor)
+
+    if (!hasPermission(actorEmployee, requiredPermission)) {
+      throw new AttendanceServiceError(
+        'UNAUTHORIZED',
+        'Your role does not have permission to perform this attendance action.',
+        403,
+      )
+    }
 
     const trimmedTargetId = targetEmployeeId.trim()
     if (!trimmedTargetId) {
@@ -273,6 +317,7 @@ export function createDemoAttendanceService(
       throw new AttendanceServiceError(
         'UNAUTHORIZED',
         'You are not authorized to submit or modify attendance for another employee.',
+        403,
       )
     }
 
@@ -293,6 +338,20 @@ export function createDemoAttendanceService(
       actor: AttendanceActorContext,
     ): Promise<AttendanceRecord[]> {
       const { actorEmployee, allEmployees } = await resolveAuthorizedActor(actor)
+      if (
+        !hasAnyPermission(actorEmployee, [
+          'attendance.read_own',
+          'attendance.read_team',
+          'attendance.read_all',
+        ])
+      ) {
+        throw new AttendanceServiceError(
+          'UNAUTHORIZED',
+          'You do not have permission to view attendance records.',
+          403,
+        )
+      }
+
       const employeeMap = new Map<string, Employee>(
         allEmployees.map((emp) => [normalizeEmployeeId(emp.employeeId), emp]),
       )
@@ -306,13 +365,12 @@ export function createDemoAttendanceService(
           : record
       })
 
-      const scoped = isHrOversightRole(actorEmployee)
-        ? records
-        : records.filter(
-            (record) =>
-              normalizeEmployeeId(record.employeeId) ===
-              normalizeEmployeeId(actorEmployee.employeeId),
-          )
+      const scoped = records.filter((record) => {
+        const ownerDepartment = employeeMap.get(
+          normalizeEmployeeId(record.employeeId),
+        )?.department
+        return canViewAttendanceRecord(actorEmployee, record, ownerDepartment)
+      })
 
       return sortNewestFirst(scoped)
     },
@@ -321,7 +379,11 @@ export function createDemoAttendanceService(
       employeeId: string,
       actor: AttendanceActorContext,
     ): Promise<AttendanceRecord | null> {
-      const targetEmployee = await resolveSelfServiceTarget(employeeId, actor)
+      const targetEmployee = await resolveSelfServiceTarget(
+        employeeId,
+        actor,
+        'attendance.read_own',
+      )
       const records = readStoredRecords()
       const targetKey = normalizeEmployeeId(targetEmployee.employeeId)
 
@@ -343,6 +405,7 @@ export function createDemoAttendanceService(
         const targetEmployee = await resolveSelfServiceTarget(
           input.employeeId,
           actor,
+          'attendance.record_own',
         )
 
         if (targetEmployee.employmentStatus === 'Inactive') {
@@ -398,6 +461,7 @@ export function createDemoAttendanceService(
         const targetEmployee = await resolveSelfServiceTarget(
           input.employeeId,
           actor,
+          'attendance.record_own',
         )
 
         const records = readStoredRecords()
@@ -488,7 +552,17 @@ export function createDemoAttendanceService(
       })
     },
 
-    async clearAttendanceRecords(): Promise<AttendanceRecord[]> {
+    async clearAttendanceRecords(
+      actor: AttendanceActorContext,
+    ): Promise<AttendanceRecord[]> {
+      const { actorEmployee } = await resolveAuthorizedActor(actor)
+      if (!hasPermission(actorEmployee, 'employees.delete')) {
+        throw new AttendanceServiceError(
+          'UNAUTHORIZED',
+          'Only an HR Admin can clear attendance records.',
+          403,
+        )
+      }
       writeStoredRecords([])
       return []
     },

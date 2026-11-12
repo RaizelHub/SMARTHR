@@ -1,30 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import AppLayout from '../components/layout/AppLayout'
-import {
-  getDemoActingEmployeeId,
-  setDemoActingEmployeeId,
-} from '../features/auth/demoSession'
-import {
-  employeeService as defaultEmployeeService,
-  type EmployeeService,
-} from '../features/employees/services/employeeService'
+import { useAuth } from '../features/auth/authContextStore'
 import { normalizeEmployeeId } from '../features/employees/validation/employeeSchema'
 import LeaveRequestForm from '../features/leave/components/LeaveRequestForm'
 import LeaveRequestHistoryTable from '../features/leave/components/LeaveRequestHistoryTable'
 import LeaveReviewQueue from '../features/leave/components/LeaveReviewQueue'
 import {
-  isReviewerRole,
   leaveService as defaultLeaveService,
   type LeaveService,
 } from '../features/leave/services/leaveService'
-import type { Employee } from '../types/employee'
 import type { LeaveRequest, SubmitLeaveRequestInput } from '../types/leave'
 
 interface LeavePageProps {
-  empService?: EmployeeService
   lvService?: LeaveService
-  initialActorEmployeeId?: string | null
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -34,59 +22,20 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
-function resolveInitialActorId(
-  employees: readonly Employee[],
-  preferredId: string | null,
-): string | null {
-  if (employees.length === 0) {
-    return null
-  }
-  if (preferredId) {
-    const match = employees.find(
-      (emp) =>
-        normalizeEmployeeId(emp.employeeId) === normalizeEmployeeId(preferredId),
-    )
-    if (match) {
-      return match.employeeId
-    }
-  }
-  const activeEmployee = employees.find(
-    (emp) => emp.employmentStatus !== 'Inactive',
-  )
-  return (activeEmployee ?? employees[0]).employeeId
-}
-
 export default function Leave({
-  empService = defaultEmployeeService,
   lvService = defaultLeaveService,
-  initialActorEmployeeId,
 }: LeavePageProps) {
-  const [employees, setEmployees] = useState<Employee[]>([])
-  const [actingEmployeeId, setActingEmployeeId] = useState<string | null>(() => {
-    if (initialActorEmployeeId !== undefined) {
-      return initialActorEmployeeId
-    }
-    return getDemoActingEmployeeId()
-  })
-  const initialActorRef = useRef<string | null>(actingEmployeeId)
+  const auth = useAuth()
+  const actingEmployee = auth.currentUser
+  const actorEmployeeId = auth.actorContext.actorEmployeeId
+  const sessionExpiresAtUtc = auth.actorContext.sessionExpiresAtUtc
+
   const [visibleRequests, setVisibleRequests] = useState<LeaveRequest[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [busyRequestId, setBusyRequestId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
-
-  const actingEmployee = useMemo(() => {
-    if (!actingEmployeeId) {
-      return null
-    }
-    const targetKey = normalizeEmployeeId(actingEmployeeId)
-    return (
-      employees.find(
-        (emp) => normalizeEmployeeId(emp.employeeId) === targetKey,
-      ) ?? null
-    )
-  }, [employees, actingEmployeeId])
 
   const ownRequests = useMemo(() => {
     if (!actingEmployee) {
@@ -98,48 +47,20 @@ export default function Leave({
     )
   }, [actingEmployee, visibleRequests])
 
-  const loadWorkspace = useCallback(
-    async (preferredActorId: string | null) => {
-      const loadedEmployees = await empService.listEmployees()
-      const resolvedActorId = resolveInitialActorId(
-        loadedEmployees,
-        preferredActorId,
-      )
-
-      if (!resolvedActorId) {
-        return {
-          loadedEmployees,
-          resolvedActorId: null,
-          loadedRequests: [] as LeaveRequest[],
-        }
-      }
-
-      if (initialActorEmployeeId === undefined) {
-        setDemoActingEmployeeId(resolvedActorId)
-      }
-
-      const loadedRequests = await lvService.listLeaveRequests({
-        actorEmployeeId: resolvedActorId,
-      })
-
-      return {
-        loadedEmployees,
-        resolvedActorId,
-        loadedRequests,
-      }
-    },
-    [empService, lvService, initialActorEmployeeId],
-  )
+  const loadWorkspace = useCallback(async () => {
+    return lvService.listLeaveRequests({
+      actorEmployeeId,
+      sessionExpiresAtUtc,
+    })
+  }, [actorEmployeeId, lvService, sessionExpiresAtUtc])
 
   useEffect(() => {
     let cancelled = false
 
-    loadWorkspace(initialActorRef.current)
-      .then((result) => {
+    loadWorkspace()
+      .then((loadedRequests) => {
         if (!cancelled) {
-          setEmployees(result.loadedEmployees)
-          setActingEmployeeId(result.resolvedActorId)
-          setVisibleRequests(result.loadedRequests)
+          setVisibleRequests(loadedRequests)
           setLoadError(null)
         }
       })
@@ -161,45 +82,13 @@ export default function Leave({
     }
   }, [loadWorkspace])
 
-  const handleActorChange = useCallback(
-    async (nextEmployeeId: string) => {
-      setActingEmployeeId(nextEmployeeId)
-      if (initialActorEmployeeId === undefined) {
-        setDemoActingEmployeeId(nextEmployeeId)
-      }
-      setActionError(null)
-      setActionSuccess(null)
-      setLoadError(null)
-      setIsLoading(true)
-
-      try {
-        const loadedRequests = await lvService.listLeaveRequests({
-          actorEmployeeId: nextEmployeeId,
-        })
-        setVisibleRequests(loadedRequests)
-      } catch (error: unknown) {
-        setLoadError(
-          getErrorMessage(
-            error,
-            'Failed to load leave requests for the selected employee.',
-          ),
-        )
-      } finally {
-        setIsLoading(false)
-      }
-    },
-    [lvService, initialActorEmployeeId],
-  )
-
   const handleRetryLoad = useCallback(async () => {
     setIsLoading(true)
     setLoadError(null)
     setActionError(null)
     try {
-      const result = await loadWorkspace(actingEmployeeId)
-      setEmployees(result.loadedEmployees)
-      setActingEmployeeId(result.resolvedActorId)
-      setVisibleRequests(result.loadedRequests)
+      const loadedRequests = await loadWorkspace()
+      setVisibleRequests(loadedRequests)
     } catch (error: unknown) {
       setLoadError(
         getErrorMessage(error, 'Failed to load leave management workspace.'),
@@ -207,24 +96,27 @@ export default function Leave({
     } finally {
       setIsLoading(false)
     }
-  }, [loadWorkspace, actingEmployeeId])
+  }, [loadWorkspace])
 
   const handleSubmitRequest = useCallback(
     async (input: SubmitLeaveRequestInput): Promise<LeaveRequest> => {
       if (!actingEmployee) {
-        throw new Error('Select an acting employee before submitting a request.')
+        throw new Error('An authenticated employee session is required.')
       }
 
       setActionError(null)
       setActionSuccess(null)
 
-      const actor = { actorEmployeeId: actingEmployee.employeeId }
+      const actor = {
+        actorEmployeeId: actingEmployee.employeeId,
+        sessionExpiresAtUtc,
+      }
       const created = await lvService.submitLeaveRequest(input, actor)
       const refreshed = await lvService.listLeaveRequests(actor)
       setVisibleRequests(refreshed)
       return created
     },
-    [actingEmployee, lvService],
+    [actingEmployee, lvService, sessionExpiresAtUtc],
   )
 
   const handleCancelRequest = useCallback(
@@ -238,7 +130,10 @@ export default function Leave({
       setActionSuccess(null)
 
       try {
-        const actor = { actorEmployeeId: actingEmployee.employeeId }
+        const actor = {
+          actorEmployeeId: actingEmployee.employeeId,
+          sessionExpiresAtUtc,
+        }
         const cancelled = await lvService.cancelLeaveRequest(requestId, actor)
         const refreshed = await lvService.listLeaveRequests(actor)
         setVisibleRequests(refreshed)
@@ -251,7 +146,7 @@ export default function Leave({
         setBusyRequestId(null)
       }
     },
-    [actingEmployee, lvService],
+    [actingEmployee, lvService, sessionExpiresAtUtc],
   )
 
   const handleReviewRequest = useCallback(
@@ -269,7 +164,10 @@ export default function Leave({
       setActionSuccess(null)
 
       try {
-        const actor = { actorEmployeeId: actingEmployee.employeeId }
+        const actor = {
+          actorEmployeeId: actingEmployee.employeeId,
+          sessionExpiresAtUtc,
+        }
         const decided = await lvService.reviewLeaveRequest(
           { requestId, decision, reviewerNote },
           actor,
@@ -285,11 +183,12 @@ export default function Leave({
         setBusyRequestId(null)
       }
     },
-    [actingEmployee, lvService],
+    [actingEmployee, lvService, sessionExpiresAtUtc],
   )
 
+  const canSubmitRequest = auth.hasPermission('leave.request')
   const showReviewQueue = Boolean(
-    actingEmployee && isReviewerRole(actingEmployee.assignedRole),
+    actingEmployee && auth.hasAnyPermission(['leave.approve', 'leave.reject']),
   )
 
   return (
@@ -300,8 +199,8 @@ export default function Leave({
             Leave Management
           </h1>
           <p className="mt-1 text-sm text-slate-600">
-            Submit employee leave requests, track approval status, and review
-            team requests based on role permissions.
+            Submit leave requests, track approval status, and review requests
+            within your authorized role scope.
           </p>
         </div>
 
@@ -336,62 +235,6 @@ export default function Leave({
           )}
         </div>
 
-        <section
-          aria-labelledby="leave-demo-actor-heading"
-          className="rounded-lg border border-slate-200 bg-white p-4 sm:p-5"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h2
-                id="leave-demo-actor-heading"
-                className="text-sm font-semibold text-slate-900"
-              >
-                Demo Session Identity
-              </h2>
-              <p className="mt-0.5 text-xs text-slate-600">
-                Switch between Employee, Manager, or HR roles to test submission
-                ownership and approval authorization.
-              </p>
-            </div>
-
-            {employees.length > 0 ? (
-              <div className="min-w-64">
-                <label
-                  htmlFor="leave-acting-demo-employee"
-                  className="block text-xs font-medium text-slate-700"
-                >
-                  Acting Demo Employee
-                </label>
-                <select
-                  id="leave-acting-demo-employee"
-                  value={actingEmployee?.employeeId ?? ''}
-                  onChange={(event) => void handleActorChange(event.target.value)}
-                  disabled={busyRequestId !== null}
-                  className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                >
-                  {employees.map((employee) => (
-                    <option key={employee.id} value={employee.employeeId}>
-                      {employee.employeeId} — {employee.fullName} (
-                      {employee.assignedRole} · {employee.department})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : !isLoading ? (
-              <div className="text-sm text-slate-700">
-                No registered employees found.{' '}
-                <Link
-                  to="/employees/new"
-                  className="font-medium text-blue-700 underline hover:text-blue-800"
-                >
-                  Register an employee first
-                </Link>
-                .
-              </div>
-            ) : null}
-          </div>
-        </section>
-
         {actionError && (
           <div
             role="alert"
@@ -417,11 +260,13 @@ export default function Leave({
           </div>
         )}
 
-        <LeaveRequestForm
-          employee={actingEmployee}
-          existingRequests={ownRequests}
-          onSubmitRequest={handleSubmitRequest}
-        />
+        {canSubmitRequest && (
+          <LeaveRequestForm
+            employee={actingEmployee}
+            existingRequests={ownRequests}
+            onSubmitRequest={handleSubmitRequest}
+          />
+        )}
 
         <LeaveRequestHistoryTable
           requests={ownRequests}
@@ -450,4 +295,3 @@ export default function Leave({
     </AppLayout>
   )
 }
-

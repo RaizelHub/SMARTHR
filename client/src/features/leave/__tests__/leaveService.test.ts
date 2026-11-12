@@ -211,27 +211,33 @@ describe('leaveService business rules, authorization, and state machine', () => 
     const storage = createMemoryStorage()
     const empService = createDemoEmployeeService(storage)
 
-    await empService.createEmployee({
-      employeeId: 'EMP-2001',
-      fullName: 'Engineering Manager',
-      workEmail: 'eng.manager@smarthr.demo',
-      department: 'Engineering',
-      position: 'Engineering Manager',
-      employmentStatus: 'Active',
-      hireDate: '2024-01-15',
-      assignedRole: 'Manager',
-    })
+    await empService.createEmployee(
+      {
+        employeeId: 'EMP-2001',
+        fullName: 'Engineering Manager',
+        workEmail: 'eng.manager@smarthr.demo',
+        department: 'Engineering',
+        position: 'Engineering Manager',
+        employmentStatus: 'Active',
+        hireDate: '2024-01-15',
+        assignedRole: 'Manager',
+      },
+      { actorEmployeeId: 'EMP-1002' },
+    )
 
-    await empService.createEmployee({
-      employeeId: 'EMP-2002',
-      fullName: 'Sales Manager',
-      workEmail: 'sales.manager@smarthr.demo',
-      department: 'Sales',
-      position: 'Sales Manager',
-      employmentStatus: 'Active',
-      hireDate: '2024-02-15',
-      assignedRole: 'Manager',
-    })
+    await empService.createEmployee(
+      {
+        employeeId: 'EMP-2002',
+        fullName: 'Sales Manager',
+        workEmail: 'sales.manager@smarthr.demo',
+        department: 'Sales',
+        position: 'Sales Manager',
+        employmentStatus: 'Active',
+        hireDate: '2024-02-15',
+        assignedRole: 'Manager',
+      },
+      { actorEmployeeId: 'EMP-1002' },
+    )
 
     const service = createDemoLeaveService({
       employeeService: empService,
@@ -320,9 +326,9 @@ describe('leaveService business rules, authorization, and state machine', () => 
     const baseEmpService = createDemoEmployeeService(storage)
     const delayedEmpService: EmployeeService = {
       ...baseEmpService,
-      async listEmployees() {
+      async listAllDirectoryForServiceInternal() {
         await new Promise((resolve) => setTimeout(resolve, 15))
-        return baseEmpService.listEmployees()
+        return baseEmpService.listAllDirectoryForServiceInternal()
       },
     }
 

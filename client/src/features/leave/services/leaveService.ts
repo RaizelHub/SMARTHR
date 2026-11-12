@@ -7,6 +7,14 @@ import type {
   SubmitLeaveRequestInput,
 } from '../../../types/leave'
 import {
+  canApproveOrRejectLeave,
+  canViewLeaveRecord,
+  getPermissionsForRole,
+  hasAnyPermission,
+  hasPermission,
+} from '../../auth/permissions'
+import { isSessionExpired } from '../../auth/securityAudit'
+import {
   employeeService as defaultEmployeeService,
   type EmployeeService,
   type StorageLike,
@@ -43,17 +51,30 @@ export type LeaveServiceErrorCode =
 
 export class LeaveServiceError extends Error {
   readonly code: LeaveServiceErrorCode
+  readonly httpStatus: 400 | 401 | 403 | 404 | 409 | 500
   readonly fieldErrors?: Partial<Record<keyof SubmitLeaveRequestInput, string>>
 
   constructor(
     code: LeaveServiceErrorCode,
     message: string,
     fieldErrors?: Partial<Record<keyof SubmitLeaveRequestInput, string>>,
+    httpStatus?: 400 | 401 | 403 | 404 | 409 | 500,
   ) {
     super(message)
     this.name = 'LeaveServiceError'
     this.code = code
     this.fieldErrors = fieldErrors
+    this.httpStatus =
+      httpStatus ??
+      (code === 'UNAUTHORIZED' || code === 'EMPLOYEE_INACTIVE'
+        ? 403
+        : code === 'EMPLOYEE_NOT_FOUND' || code === 'REQUEST_NOT_FOUND'
+          ? 404
+          : code === 'VALIDATION_ERROR'
+            ? 400
+            : code === 'PERSISTENCE_ERROR'
+              ? 500
+              : 409)
   }
 }
 
@@ -82,56 +103,19 @@ export interface LeaveService {
     input: ReviewLeaveRequestInput,
     actor: LeaveActorContext,
   ): Promise<LeaveRequest>
-  clearLeaveRequests(): Promise<LeaveRequest[]>
+  clearLeaveRequests(actor: LeaveActorContext): Promise<LeaveRequest[]>
 }
 
 export function isReviewerRole(role: Employee['assignedRole']): boolean {
-  return (
-    role === 'Manager' ||
-    role === 'HR Coordinator' ||
-    role === 'HR Admin'
-  )
+  const perms = getPermissionsForRole(role)
+  return perms.includes('leave.approve') || perms.includes('leave.reject')
 }
 
 export function canReviewerActOnRequest(
   reviewer: Employee,
   request: LeaveRequest,
 ): { allowed: boolean; reason?: string } {
-  if (!isReviewerRole(reviewer.assignedRole)) {
-    return {
-      allowed: false,
-      reason: 'Only Managers or HR personnel can review leave requests.',
-    }
-  }
-
-  if (
-    normalizeEmployeeId(reviewer.employeeId) ===
-    normalizeEmployeeId(request.employeeId)
-  ) {
-    return {
-      allowed: false,
-      reason: 'Reviewers cannot approve or reject their own leave requests.',
-    }
-  }
-
-  if (
-    reviewer.assignedRole === 'Manager' &&
-    reviewer.department !== request.department
-  ) {
-    return {
-      allowed: false,
-      reason: 'Managers can only review leave requests within their department.',
-    }
-  }
-
-  if (request.status !== 'Pending') {
-    return {
-      allowed: false,
-      reason: `Request is ${request.status} and cannot be modified.`,
-    }
-  }
-
-  return { allowed: true }
+  return canApproveOrRejectLeave(reviewer, request)
 }
 
 function getDefaultStorage(): StorageLike | null {
@@ -296,10 +280,21 @@ export function createDemoLeaveService(
       throw new LeaveServiceError(
         'UNAUTHORIZED',
         'An authenticated employee session is required to access leave management.',
+        undefined,
+        401,
       )
     }
 
-    const allEmployees = await empService.listEmployees()
+    if (isSessionExpired(actor.sessionExpiresAtUtc, now())) {
+      throw new LeaveServiceError(
+        'UNAUTHORIZED',
+        'Your session has expired. Please sign in again.',
+        undefined,
+        401,
+      )
+    }
+
+    const allEmployees = await empService.listAllDirectoryForServiceInternal()
     const actorKey = normalizeEmployeeId(rawActorId)
     const actorEmployee = allEmployees.find(
       (employee) => normalizeEmployeeId(employee.employeeId) === actorKey,
@@ -309,6 +304,17 @@ export function createDemoLeaveService(
       throw new LeaveServiceError(
         'UNAUTHORIZED',
         'Current session identity does not match an existing employee record.',
+        undefined,
+        401,
+      )
+    }
+
+    if (actorEmployee.employmentStatus === 'Inactive') {
+      throw new LeaveServiceError(
+        'EMPLOYEE_INACTIVE',
+        'Inactive employees cannot perform leave management actions.',
+        undefined,
+        403,
       )
     }
 
@@ -321,28 +327,6 @@ export function createDemoLeaveService(
     )
   }
 
-  function canViewRequest(actor: Employee, request: LeaveRequest): boolean {
-    if (
-      actor.assignedRole === 'HR Admin' ||
-      actor.assignedRole === 'HR Coordinator'
-    ) {
-      return true
-    }
-
-    if (
-      normalizeEmployeeId(actor.employeeId) ===
-      normalizeEmployeeId(request.employeeId)
-    ) {
-      return true
-    }
-
-    if (actor.assignedRole === 'Manager') {
-      return actor.department === request.department
-    }
-
-    return false
-  }
-
   return {
     isDemoMode: true,
     businessTimezone: BUSINESS_TIMEZONE,
@@ -352,9 +336,23 @@ export function createDemoLeaveService(
       actor: LeaveActorContext,
     ): Promise<LeaveRequest[]> {
       const { actorEmployee } = await resolveActor(actor)
+      if (
+        !hasAnyPermission(actorEmployee, [
+          'leave.read_own',
+          'leave.read_team',
+          'leave.read_all',
+        ])
+      ) {
+        throw new LeaveServiceError(
+          'UNAUTHORIZED',
+          'You do not have permission to view leave requests.',
+          undefined,
+          403,
+        )
+      }
       const requests = readStoredRequests()
       return sortNewestFirst(
-        requests.filter((request) => canViewRequest(actorEmployee, request)),
+        requests.filter((request) => canViewLeaveRecord(actorEmployee, request)),
       )
     },
 
@@ -365,6 +363,15 @@ export function createDemoLeaveService(
       const lockKey = `submit:${normalizeEmployeeId(input.employeeId ?? '') || '__empty__'}`
       return withLock(lockKey, async () => {
         const { actorEmployee, allEmployees } = await resolveActor(actor)
+
+        if (!hasPermission(actorEmployee, 'leave.request')) {
+          throw new LeaveServiceError(
+            'UNAUTHORIZED',
+            'Your role does not have permission to submit leave requests.',
+            undefined,
+            403,
+          )
+        }
 
         const trimmedTargetId = (input.employeeId ?? '').trim()
         if (!trimmedTargetId) {
@@ -505,6 +512,14 @@ export function createDemoLeaveService(
     ): Promise<LeaveRequest> {
       return withLock(`req:${requestId}`, async () => {
         const { actorEmployee } = await resolveActor(actor)
+        if (!hasPermission(actorEmployee, 'leave.request')) {
+          throw new LeaveServiceError(
+            'UNAUTHORIZED',
+            'You do not have permission to cancel leave requests.',
+            undefined,
+            403,
+          )
+        }
         const requests = readStoredRequests()
         const index = requests.findIndex((item) => item.id === requestId)
 
@@ -568,10 +583,14 @@ export function createDemoLeaveService(
       return withLock(`req:${input.requestId}`, async () => {
         const { actorEmployee } = await resolveActor(actor)
 
-        if (!isReviewerRole(actorEmployee.assignedRole)) {
+        const requiredPermission =
+          input.decision === 'Approved' ? 'leave.approve' : 'leave.reject'
+        if (!hasPermission(actorEmployee, requiredPermission)) {
           throw new LeaveServiceError(
             'UNAUTHORIZED',
             'You are not authorized to approve or reject leave requests.',
+            undefined,
+            403,
           )
         }
 
@@ -595,30 +614,23 @@ export function createDemoLeaveService(
 
         const existingRequest = requests[index]
 
-        if (
-          normalizeEmployeeId(existingRequest.employeeId) ===
-          normalizeEmployeeId(actorEmployee.employeeId)
-        ) {
+        const decisionCheck = canApproveOrRejectLeave(
+          actorEmployee,
+          existingRequest,
+        )
+        if (!decisionCheck.allowed) {
+          if (existingRequest.status !== 'Pending') {
+            throw new LeaveServiceError(
+              'INVALID_STATUS_TRANSITION',
+              `Leave request is already ${existingRequest.status} and cannot transition to ${input.decision}.`,
+            )
+          }
           throw new LeaveServiceError(
             'UNAUTHORIZED',
-            'Reviewers cannot approve or reject their own leave requests.',
-          )
-        }
-
-        if (
-          actorEmployee.assignedRole === 'Manager' &&
-          actorEmployee.department !== existingRequest.department
-        ) {
-          throw new LeaveServiceError(
-            'UNAUTHORIZED',
-            'Managers can only review leave requests within their own department.',
-          )
-        }
-
-        if (existingRequest.status !== 'Pending') {
-          throw new LeaveServiceError(
-            'INVALID_STATUS_TRANSITION',
-            `Leave request is already ${existingRequest.status} and cannot transition to ${input.decision}.`,
+            decisionCheck.reason ??
+              'You are not authorized to review this leave request.',
+            undefined,
+            403,
           )
         }
 
@@ -652,7 +664,16 @@ export function createDemoLeaveService(
       })
     },
 
-    async clearLeaveRequests(): Promise<LeaveRequest[]> {
+    async clearLeaveRequests(actor: LeaveActorContext): Promise<LeaveRequest[]> {
+      const { actorEmployee } = await resolveActor(actor)
+      if (!hasPermission(actorEmployee, 'employees.delete')) {
+        throw new LeaveServiceError(
+          'UNAUTHORIZED',
+          'Only an HR Admin can clear demo leave requests.',
+          undefined,
+          403,
+        )
+      }
       writeStoredRequests([])
       return []
     },

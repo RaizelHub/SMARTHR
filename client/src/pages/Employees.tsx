@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import AppLayout from '../components/layout/AppLayout'
+import { useAuth } from '../features/auth/authContextStore'
 import EmployeeRegistrationForm from '../features/employees/components/EmployeeRegistrationForm'
 import EmployeeRosterTable from '../features/employees/components/EmployeeRosterTable'
 import {
@@ -24,17 +25,32 @@ export default function Employees({
   service = employeeService,
   focusRegistration = false,
 }: EmployeesPageProps) {
+  const auth = useAuth()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [isActionBusy, setIsActionBusy] = useState<boolean>(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
+  const actorEmployeeId = auth.actorContext.actorEmployeeId
+  const sessionExpiresAtUtc = auth.actorContext.sessionExpiresAtUtc
+  const canCreate = auth.hasPermission('employees.create')
+  const canDelete = auth.hasPermission('employees.delete')
+  const canAssignHrAdmin = auth.hasPermission('roles.manage')
+  const canReadAll = auth.hasPermission('employees.read_all')
+  const canReadTeam = auth.hasPermission('employees.read_team')
+
+  const scopeDescription = canReadAll
+    ? 'Organization scope: viewing all registered employees stored in browser demo storage.'
+    : canReadTeam
+      ? `Department scope (${auth.currentUser?.department ?? ''}): viewing only employees in your department.`
+      : 'Personal scope: viewing only your own employee profile.'
+
   useEffect(() => {
     let cancelled = false
 
     service
-      .listEmployees()
+      .listEmployees({ actorEmployeeId, sessionExpiresAtUtc })
       .then((records) => {
         if (!cancelled) {
           setEmployees(records)
@@ -57,37 +73,46 @@ export default function Employees({
     return () => {
       cancelled = true
     }
-  }, [service])
+  }, [actorEmployeeId, sessionExpiresAtUtc, service])
 
   const handleRetryLoad = useCallback(async () => {
     setIsLoading(true)
     setLoadError(null)
     setActionError(null)
     try {
-      const records = await service.listEmployees()
+      const records = await service.listEmployees({
+        actorEmployeeId,
+        sessionExpiresAtUtc,
+      })
       setEmployees(records)
     } catch (error: unknown) {
       setLoadError(getErrorMessage(error, 'Failed to load employee records.'))
     } finally {
       setIsLoading(false)
     }
-  }, [service])
+  }, [actorEmployeeId, sessionExpiresAtUtc, service])
 
   const handleRegister = useCallback(
     async (input: CreateEmployeeInput): Promise<Employee> => {
       setActionError(null)
-      const created = await service.createEmployee(input)
+      const created = await service.createEmployee(input, {
+        actorEmployeeId,
+        sessionExpiresAtUtc,
+      })
       setEmployees((previous) => [created, ...previous])
       return created
     },
-    [service],
+    [actorEmployeeId, sessionExpiresAtUtc, service],
   )
 
   const handleClearAll = useCallback(async () => {
     setIsActionBusy(true)
     setActionError(null)
     try {
-      const updated = await service.clearEmployees()
+      const updated = await service.clearEmployees({
+        actorEmployeeId,
+        sessionExpiresAtUtc,
+      })
       setEmployees(updated)
     } catch (error: unknown) {
       setActionError(
@@ -96,14 +121,17 @@ export default function Employees({
     } finally {
       setIsActionBusy(false)
     }
-  }, [service])
+  }, [actorEmployeeId, sessionExpiresAtUtc, service])
 
   const handleResetDemo = useCallback(async () => {
     setIsActionBusy(true)
     setActionError(null)
     setLoadError(null)
     try {
-      const restored = await service.resetDemoEmployees()
+      const restored = await service.resetDemoEmployees({
+        actorEmployeeId,
+        sessionExpiresAtUtc,
+      })
       setEmployees(restored)
     } catch (error: unknown) {
       setActionError(
@@ -112,7 +140,7 @@ export default function Employees({
     } finally {
       setIsActionBusy(false)
     }
-  }, [service])
+  }, [actorEmployeeId, sessionExpiresAtUtc, service])
 
   return (
     <AppLayout>
@@ -123,7 +151,9 @@ export default function Employees({
               Employee Management
             </h1>
             <p className="mt-1 text-sm text-slate-600">
-              Register new employees and review the active demo directory.
+              {canCreate
+                ? 'Register new employees and review the active demo directory.'
+                : 'Review employee records permitted for your assigned role.'}
             </p>
           </div>
         </div>
@@ -134,8 +164,8 @@ export default function Employees({
             className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
           >
             <span className="font-medium">Demo-Only Persistence:</span> No
-            backend server or database is currently connected. Registered
-            employees are saved locally in your browser via{' '}
+            backend server or database is currently connected. Employee records
+            and RBAC permissions run locally in browser{' '}
             <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">
               localStorage
             </code>{' '}
@@ -152,23 +182,27 @@ export default function Employees({
           </div>
         )}
 
-        <EmployeeRegistrationForm
-          existingEmployees={employees}
-          onRegister={handleRegister}
-          autoFocusFirstField={focusRegistration}
-        />
+        {canCreate && (
+          <EmployeeRegistrationForm
+            existingEmployees={employees}
+            onRegister={handleRegister}
+            autoFocusFirstField={focusRegistration}
+            canAssignHrAdmin={canAssignHrAdmin}
+          />
+        )}
 
         <EmployeeRosterTable
           employees={employees}
           isLoading={isLoading}
           loadError={loadError}
           onRetryLoad={handleRetryLoad}
-          onClearAll={handleClearAll}
-          onResetDemo={handleResetDemo}
+          onClearAll={canDelete ? handleClearAll : undefined}
+          onResetDemo={canDelete ? handleResetDemo : undefined}
           isActionBusy={isActionBusy}
+          canManageDestructiveActions={canDelete}
+          scopeDescription={scopeDescription}
         />
       </div>
     </AppLayout>
   )
 }
-

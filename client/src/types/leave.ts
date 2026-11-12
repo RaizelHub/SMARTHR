@@ -77,5 +77,6 @@ export interface ReviewLeaveRequestInput {
 
 export interface LeaveActorContext {
   actorEmployeeId: string | null | undefined
+  sessionExpiresAtUtc?: string | null
 }
 

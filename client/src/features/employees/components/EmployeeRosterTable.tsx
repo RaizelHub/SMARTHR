@@ -5,9 +5,11 @@ interface EmployeeRosterTableProps {
   isLoading: boolean
   loadError: string | null
   onRetryLoad: () => void
-  onClearAll: () => void
-  onResetDemo: () => void
+  onClearAll?: () => void
+  onResetDemo?: () => void
   isActionBusy?: boolean
+  canManageDestructiveActions?: boolean
+  scopeDescription?: string
 }
 
 function getStatusBadgeClasses(status: EmploymentStatus): string {
@@ -33,6 +35,8 @@ export default function EmployeeRosterTable({
   onClearAll,
   onResetDemo,
   isActionBusy = false,
+  canManageDestructiveActions = false,
+  scopeDescription = 'Showing employee records permitted for your role.',
 }: EmployeeRosterTableProps) {
   return (
     <section
@@ -52,30 +56,29 @@ export default function EmployeeRosterTable({
               {employees.length}
             </span>
           </div>
-          <p className="mt-1 text-sm text-slate-600">
-            Showing synthetic demo records and newly registered employees stored
-            in your browser.
-          </p>
+          <p className="mt-1 text-sm text-slate-600">{scopeDescription}</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={onResetDemo}
-            disabled={isLoading || isActionBusy}
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-blue-600"
-          >
-            Reset Demo Data
-          </button>
-          <button
-            type="button"
-            onClick={onClearAll}
-            disabled={isLoading || isActionBusy || employees.length === 0}
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-blue-600"
-          >
-            Clear All
-          </button>
-        </div>
+        {canManageDestructiveActions && onResetDemo && onClearAll && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={onResetDemo}
+              disabled={isLoading || isActionBusy}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-blue-600"
+            >
+              Reset Demo Data
+            </button>
+            <button
+              type="button"
+              onClick={onClearAll}
+              disabled={isLoading || isActionBusy || employees.length === 0}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-blue-600"
+            >
+              Clear All
+            </button>
+          </div>
+        )}
       </div>
 
       {isLoading && (
@@ -102,13 +105,15 @@ export default function EmployeeRosterTable({
             >
               Retry
             </button>
-            <button
-              type="button"
-              onClick={onResetDemo}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-600"
-            >
-              Reset Demo Data
-            </button>
+            {canManageDestructiveActions && onResetDemo && (
+              <button
+                type="button"
+                onClick={onResetDemo}
+                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-600"
+              >
+                Reset Demo Data
+              </button>
+            )}
           </div>
         </div>
       )}

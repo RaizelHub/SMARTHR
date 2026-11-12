@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { CreateEmployeeInput } from '../../../types/employee'
 import {
   createDemoEmployeeService,
   DEMO_EMPLOYEES_STORAGE_KEY,
@@ -6,7 +7,6 @@ import {
   SYNTHETIC_DEMO_EMPLOYEES,
   type StorageLike,
 } from '../services/employeeService'
-import type { CreateEmployeeInput } from '../../../types/employee'
 
 function createMemoryStorage(initial: Record<string, string> = {}): StorageLike {
   const store = new Map<string, string>(Object.entries(initial))
@@ -36,12 +36,15 @@ function buildNewEmployeeInput(): CreateEmployeeInput {
   }
 }
 
+const HR_ACTOR = { actorEmployeeId: 'EMP-1002' }
+const ADMIN_ACTOR = { actorEmployeeId: 'EMP-1005' }
+
 describe('employeeService (demo local storage)', () => {
   it('seeds synthetic demo employees on first load', async () => {
     const storage = createMemoryStorage()
     const service = createDemoEmployeeService(storage)
 
-    const employees = await service.listEmployees()
+    const employees = await service.listEmployees(HR_ACTOR)
     expect(employees).toHaveLength(SYNTHETIC_DEMO_EMPLOYEES.length)
     expect(employees.map((e) => e.employeeId)).toEqual(
       SYNTHETIC_DEMO_EMPLOYEES.map((e) => e.employeeId),
@@ -52,7 +55,10 @@ describe('employeeService (demo local storage)', () => {
   it('creates and persists a new employee across service instances', async () => {
     const storage = createMemoryStorage()
     const firstInstance = createDemoEmployeeService(storage)
-    const created = await firstInstance.createEmployee(buildNewEmployeeInput())
+    const created = await firstInstance.createEmployee(
+      buildNewEmployeeInput(),
+      HR_ACTOR,
+    )
 
     expect(created.employeeId).toBe('EMP-2050')
     expect(created.workEmail).toBe('elena.vance@smarthr.demo')
@@ -60,7 +66,7 @@ describe('employeeService (demo local storage)', () => {
     expect(created.createdAt).toBeTruthy()
 
     const secondInstance = createDemoEmployeeService(storage)
-    const reloaded = await secondInstance.listEmployees()
+    const reloaded = await secondInstance.listEmployees(HR_ACTOR)
     expect(reloaded[0]?.employeeId).toBe('EMP-2050')
     expect(reloaded).toHaveLength(SYNTHETIC_DEMO_EMPLOYEES.length + 1)
   })
@@ -70,10 +76,13 @@ describe('employeeService (demo local storage)', () => {
     const service = createDemoEmployeeService(storage)
 
     await expect(
-      service.createEmployee({
-        ...buildNewEmployeeInput(),
-        employeeId: 'emp-1001',
-      }),
+      service.createEmployee(
+        {
+          ...buildNewEmployeeInput(),
+          employeeId: 'emp-1001',
+        },
+        HR_ACTOR,
+      ),
     ).rejects.toMatchObject({
       name: 'EmployeeServiceError',
       code: 'DUPLICATE_EMPLOYEE_ID',
@@ -85,10 +94,13 @@ describe('employeeService (demo local storage)', () => {
     const service = createDemoEmployeeService(storage)
 
     await expect(
-      service.createEmployee({
-        ...buildNewEmployeeInput(),
-        workEmail: 'PRIYA.NAIR@SMARTHR.DEMO',
-      }),
+      service.createEmployee(
+        {
+          ...buildNewEmployeeInput(),
+          workEmail: 'PRIYA.NAIR@SMARTHR.DEMO',
+        },
+        HR_ACTOR,
+      ),
     ).rejects.toMatchObject({
       name: 'EmployeeServiceError',
       code: 'DUPLICATE_WORK_EMAIL',
@@ -99,11 +111,11 @@ describe('employeeService (demo local storage)', () => {
     const storage = createMemoryStorage()
     const service = createDemoEmployeeService(storage)
 
-    const cleared = await service.clearEmployees()
+    const cleared = await service.clearEmployees(ADMIN_ACTOR)
     expect(cleared).toEqual([])
-    expect(await service.listEmployees()).toEqual([])
+    expect(await service.listEmployees(ADMIN_ACTOR)).toEqual([])
 
-    const restored = await service.resetDemoEmployees()
+    const restored = await service.resetDemoEmployees(ADMIN_ACTOR)
     expect(restored).toHaveLength(SYNTHETIC_DEMO_EMPLOYEES.length)
   })
 
@@ -113,7 +125,7 @@ describe('employeeService (demo local storage)', () => {
     })
     const corruptedService = createDemoEmployeeService(corruptedStorage)
 
-    await expect(corruptedService.listEmployees()).rejects.toBeInstanceOf(
+    await expect(corruptedService.listEmployees(HR_ACTOR)).rejects.toBeInstanceOf(
       EmployeeServiceError,
     )
 
@@ -127,10 +139,9 @@ describe('employeeService (demo local storage)', () => {
     const failingService = createDemoEmployeeService(failingWriteStorage)
 
     await expect(
-      failingService.createEmployee(buildNewEmployeeInput()),
+      failingService.createEmployee(buildNewEmployeeInput(), HR_ACTOR),
     ).rejects.toMatchObject({
       code: 'PERSISTENCE_ERROR',
     })
   })
 })
-

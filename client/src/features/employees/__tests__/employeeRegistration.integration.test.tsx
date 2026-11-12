@@ -2,19 +2,57 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import Employees from '../../../pages/Employees'
+import type { Employee } from '../../../types/employee'
+import { AuthProvider } from '../../auth/AuthContext'
 import {
   createDemoEmployeeService,
   DEMO_EMPLOYEES_STORAGE_KEY,
   EmployeeServiceError,
+  SYNTHETIC_DEMO_EMPLOYEES,
   type EmployeeService,
 } from '../services/employeeService'
 
-function renderEmployeesPage(service?: EmployeeService) {
+const HR_COORDINATOR_USER = SYNTHETIC_DEMO_EMPLOYEES.find(
+  (emp) => emp.employeeId === 'EMP-1002',
+)!
+const HR_ADMIN_USER = SYNTHETIC_DEMO_EMPLOYEES.find(
+  (emp) => emp.employeeId === 'EMP-1005',
+)!
+
+function renderEmployeesPage(
+  service?: EmployeeService,
+  actingUser: Employee = HR_COORDINATOR_USER,
+) {
   return render(
     <MemoryRouter initialEntries={['/employees']}>
-      <Employees service={service} />
+      <AuthProvider
+        initialAuthState={{
+          status: 'authenticated',
+          user: actingUser,
+        }}
+      >
+        <Employees service={service} />
+      </AuthProvider>
     </MemoryRouter>,
   )
+}
+
+function createStubEmployeeService(
+  overrides: Partial<EmployeeService>,
+): EmployeeService {
+  return {
+    isDemoMode: true,
+    listDemoSignInProfiles: vi.fn().mockResolvedValue([]),
+    resolveEmployeeForAuth: vi.fn().mockResolvedValue(null),
+    listAllDirectoryForServiceInternal: vi.fn().mockResolvedValue([]),
+    listEmployees: vi.fn().mockResolvedValue([]),
+    createEmployee: vi.fn(),
+    updateEmployeeRole: vi.fn(),
+    listSecurityAuditEvents: vi.fn().mockResolvedValue([]),
+    clearEmployees: vi.fn().mockResolvedValue([]),
+    resetDemoEmployees: vi.fn().mockResolvedValue([]),
+    ...overrides,
+  }
 }
 
 function fillValidRegistrationForm(overrides?: {
@@ -174,8 +212,7 @@ describe('Employee Creation and Registration integration workflow', () => {
   })
 
   it('displays an appropriate error when a persistence or API-style request fails', async () => {
-    const failingService: EmployeeService = {
-      isDemoMode: true,
+    const failingService = createStubEmployeeService({
       listEmployees: async () => [],
       createEmployee: async () => {
         throw new EmployeeServiceError(
@@ -183,9 +220,7 @@ describe('Employee Creation and Registration integration workflow', () => {
           'Simulated storage write failure.',
         )
       },
-      clearEmployees: async () => [],
-      resetDemoEmployees: async () => [],
-    }
+    })
 
     renderEmployeesPage(failingService)
 
@@ -207,16 +242,12 @@ describe('Employee Creation and Registration integration workflow', () => {
   })
 
   it('displays an error and allows retry when loading employee records fails', async () => {
-    const loadOnceFailingService: EmployeeService = {
-      isDemoMode: true,
+    const loadOnceFailingService = createStubEmployeeService({
       listEmployees: vi
         .fn()
         .mockRejectedValueOnce(new Error('Storage read failed'))
         .mockResolvedValueOnce([]),
-      createEmployee: vi.fn(),
-      clearEmployees: vi.fn(),
-      resetDemoEmployees: vi.fn(),
-    }
+    })
 
     renderEmployeesPage(loadOnceFailingService)
 
@@ -232,9 +263,9 @@ describe('Employee Creation and Registration integration workflow', () => {
     })
   })
 
-  it('shows empty state after clearing all records and restores samples on reset', async () => {
+  it('shows empty state after clearing all records and restores samples on reset for HR Admin', async () => {
     const service = createDemoEmployeeService(window.localStorage)
-    renderEmployeesPage(service)
+    renderEmployeesPage(service, HR_ADMIN_USER)
 
     await waitFor(() => {
       expect(screen.getByText('Jordan Taylor')).toBeTruthy()
@@ -253,4 +284,3 @@ describe('Employee Creation and Registration integration workflow', () => {
     })
   })
 })
-
