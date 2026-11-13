@@ -31,6 +31,8 @@ function getAuditBadgeClasses(eventType: SecurityAuditEntry['eventType']): strin
     'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium'
   switch (eventType) {
     case 'ROLE_CHANGED':
+    case 'EMPLOYEE_CREATED':
+    case 'EMPLOYEE_UPDATED':
     case 'COMPENSATION_CREATED':
     case 'PAYROLL_PERIOD_CREATED':
     case 'PAYROLL_DRAFT_GENERATED':
@@ -38,12 +40,22 @@ function getAuditBadgeClasses(eventType: SecurityAuditEntry['eventType']): strin
     case 'PAYROLL_MARKED_IN_REVIEW':
       return `${base} border-blue-200 bg-blue-50 text-blue-800`
     case 'ROLE_CHANGE_DENIED':
+    case 'EMPLOYEE_CREATE_DENIED':
+    case 'EMPLOYEE_UPDATE_DENIED':
+    case 'EMPLOYEE_ACCESS_DENIED':
+    case 'LEAVE_REVIEW_DENIED':
+    case 'LEAVE_SELF_APPROVAL_BLOCKED':
+    case 'REPORT_EXPORT_DENIED':
     case 'COMPENSATION_DENIED':
     case 'PAYROLL_ACCESS_DENIED':
       return `${base} border-red-200 bg-red-50 text-red-800`
     case 'DIRECTORY_CLEARED':
     case 'DIRECTORY_RESET':
+    case 'EMPLOYEE_DEACTIVATED':
+    case 'EMPLOYEE_DELETE_BLOCKED':
       return `${base} border-amber-200 bg-amber-50 text-amber-800`
+    default:
+      return `${base} border-slate-200 bg-slate-100 text-slate-700`
   }
 }
 
@@ -407,7 +419,7 @@ export default function RoleManagement({
             </h2>
             <p className="mt-1 text-sm text-slate-600">
               Records authorization denials, role changes, and administrative
-              directory resets in demo storage.
+              directory events{service.isDemoMode ? ' in demo storage.' : ' in the backend audit log.'}
             </p>
           </div>
 

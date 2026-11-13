@@ -31,4 +31,3 @@ class CreateCompensationRequest extends FormRequest
         ];
     }
 }
-

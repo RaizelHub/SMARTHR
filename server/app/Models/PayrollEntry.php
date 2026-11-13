@@ -69,4 +69,3 @@ class PayrollEntry extends Model
         return $this->hasMany(PayrollLineItem::class, 'payroll_entry_id');
     }
 }
-

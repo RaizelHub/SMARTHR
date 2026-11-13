@@ -33,4 +33,3 @@ class PayrollLineItem extends Model
         return $this->belongsTo(PayrollEntry::class, 'payroll_entry_id');
     }
 }
-

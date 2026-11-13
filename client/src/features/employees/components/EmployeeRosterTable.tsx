@@ -1,4 +1,8 @@
-import type { Employee, EmploymentStatus } from '../../../types/employee'
+import {
+  EMPLOYMENT_STATUSES,
+  type Employee,
+  type EmploymentStatus,
+} from '../../../types/employee'
 
 interface EmployeeRosterTableProps {
   employees: readonly Employee[]
@@ -7,6 +11,7 @@ interface EmployeeRosterTableProps {
   onRetryLoad: () => void
   onClearAll?: () => void
   onResetDemo?: () => void
+  onStatusChange?: (employeeId: string, nextStatus: EmploymentStatus) => void
   isActionBusy?: boolean
   canManageDestructiveActions?: boolean
   scopeDescription?: string
@@ -34,6 +39,7 @@ export default function EmployeeRosterTable({
   onRetryLoad,
   onClearAll,
   onResetDemo,
+  onStatusChange,
   isActionBusy = false,
   canManageDestructiveActions = false,
   scopeDescription = 'Showing employee records permitted for your role.',
@@ -162,6 +168,11 @@ export default function EmployeeRosterTable({
                 <th scope="col" className="px-3 py-2.5">
                   Role
                 </th>
+                {onStatusChange && (
+                  <th scope="col" className="px-3 py-2.5">
+                    Update Status
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 bg-white">
@@ -193,6 +204,28 @@ export default function EmployeeRosterTable({
                   <td className="whitespace-nowrap px-3 py-3 text-slate-700">
                     {employee.assignedRole}
                   </td>
+                  {onStatusChange && (
+                    <td className="whitespace-nowrap px-3 py-3">
+                      <select
+                        aria-label={`Roster status for ${employee.employeeId}`}
+                        value={employee.employmentStatus}
+                        disabled={isActionBusy}
+                        onChange={(event) =>
+                          onStatusChange(
+                            employee.employeeId,
+                            event.target.value as EmploymentStatus,
+                          )
+                        }
+                        className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      >
+                        {EMPLOYMENT_STATUSES.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

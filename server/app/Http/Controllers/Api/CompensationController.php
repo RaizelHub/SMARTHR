@@ -46,4 +46,3 @@ class CompensationController extends Controller
         ], 201);
     }
 }
-

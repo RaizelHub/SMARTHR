@@ -6,6 +6,7 @@ import {
   type ClockOutInput,
 } from '../../../types/attendance'
 import type { Employee } from '../../../types/employee'
+import { isBackendApiConfigured } from '../../api/httpClient'
 import {
   canViewAttendanceRecord,
   hasAnyPermission,
@@ -22,6 +23,7 @@ import {
   calculateDurationMinutes,
   getBusinessDateString,
 } from '../utils/timeZone'
+import { createApiAttendanceService } from './attendanceApiService'
 
 /**
  * DEMO-ONLY ATTENDANCE PERSISTENCE LAYER
@@ -569,5 +571,7 @@ export function createDemoAttendanceService(
   }
 }
 
-export const attendanceService: AttendanceService = createDemoAttendanceService()
+export const attendanceService: AttendanceService = isBackendApiConfigured()
+  ? createApiAttendanceService()
+  : createDemoAttendanceService()
 

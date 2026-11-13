@@ -349,9 +349,9 @@ export default function Reports({
                 Metric Definitions &amp; Calculation Rules
               </h2>
               <p className="mt-1 text-xs text-slate-600">
-                Payroll calculations, statutory holiday/absence deductions, and
-                leave balance accruals remain outside Smart HR scope until HR
-                policies and server APIs are configured.
+                Absence/tardiness schedules, payable hours mapping, and leave
+                balance entitlements remain unconfigured pending formal HR policy
+                rules.
               </p>
               <dl className="mt-4 divide-y divide-slate-200 text-sm">
                 {report.metricDefinitions.map((item) => (

@@ -21,4 +21,3 @@ class SetPayableUnitsRequest extends FormRequest
         ];
     }
 }
-

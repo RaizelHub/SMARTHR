@@ -24,4 +24,3 @@ class AddManualAdjustmentRequest extends FormRequest
         ];
     }
 }
-

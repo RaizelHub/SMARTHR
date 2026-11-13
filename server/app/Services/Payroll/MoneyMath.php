@@ -107,4 +107,3 @@ final class MoneyMath
         return ($negative ? '-' : '')."PHP {$whole}.{$frac}";
     }
 }
-

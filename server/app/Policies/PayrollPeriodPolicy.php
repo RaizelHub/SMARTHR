@@ -37,4 +37,3 @@ class PayrollPeriodPolicy
         return $user->hasPermission('payroll.lock');
     }
 }
-

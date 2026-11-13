@@ -52,3 +52,13 @@ export interface CreateEmployeeInput {
   assignedRole: AssignedRole
 }
 
+export interface UpdateEmployeeInput {
+  targetEmployeeId: string
+  fullName?: string
+  workEmail?: string
+  department?: Department
+  position?: string
+  employmentStatus?: EmploymentStatus
+  hireDate?: string
+}
+

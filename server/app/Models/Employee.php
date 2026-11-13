@@ -43,5 +43,14 @@ class Employee extends Model
     {
         return $this->hasMany(PayrollEntry::class, 'employee_id');
     }
-}
 
+    public function attendances(): HasMany
+    {
+        return $this->hasMany(Attendance::class, 'employee_id');
+    }
+
+    public function leaveRequests(): HasMany
+    {
+        return $this->hasMany(LeaveRequest::class, 'employee_id');
+    }
+}

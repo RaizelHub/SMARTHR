@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('employee_compensations', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('employee_id')->constrained('employees')->cascadeOnDelete();
+            $table->foreignId('employee_id')->constrained('employees')->restrictOnDelete();
             $table->string('pay_basis', 16); // Monthly | Daily | Hourly
             $table->bigInteger('base_amount_centavos');
             $table->string('currency', 3)->default('PHP');
@@ -32,4 +32,3 @@ return new class extends Migration
         Schema::dropIfExists('employee_compensations');
     }
 };
-

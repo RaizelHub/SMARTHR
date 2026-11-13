@@ -90,4 +90,3 @@ class PayrollPeriod extends Model
         return in_array($this->status, [self::STATUS_APPROVED, self::STATUS_LOCKED], true);
     }
 }
-

@@ -53,4 +53,3 @@ class DevPayrollUserSeeder extends Seeder
         }
     }
 }
-

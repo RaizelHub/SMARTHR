@@ -2,11 +2,15 @@
 
 namespace App\Http\Transformers;
 
+use App\Models\Attendance;
 use App\Models\Employee;
 use App\Models\EmployeeCompensation;
+use App\Models\LeaveDecisionLog;
+use App\Models\LeaveRequest;
 use App\Models\PayrollAuditLog;
 use App\Models\PayrollEntry;
 use App\Models\PayrollPeriod;
+use App\Models\SecurityAuditLog;
 use App\Models\User;
 use App\Support\RolePermissions;
 
@@ -41,7 +45,7 @@ final class PayrollPresenter
     public static function employeeReference(Employee $emp): array
     {
         return [
-            'id' => $emp->id,
+            'id' => (string) $emp->id,
             'employeeId' => $emp->employee_code,
             'fullName' => $emp->full_name,
             'workEmail' => $emp->work_email,
@@ -51,6 +55,7 @@ final class PayrollPresenter
             'assignedRole' => $emp->assigned_role,
             'isMinimumWageEarner' => (bool) $emp->is_minimum_wage_earner,
             'hireDate' => $emp->hire_date->format('Y-m-d'),
+            'createdAt' => $emp->created_at?->toIso8601String() ?? ($emp->hire_date->format('Y-m-d').'T00:00:00.000Z'),
         ];
     }
 
@@ -119,7 +124,7 @@ final class PayrollPresenter
     /**
      * @return array<string, mixed>
      */
-    public static function entry(PayrollEntry $entry): array
+    public static function entry(PayrollEntry $entry, int $attendanceSessionsInPeriod = 0): array
     {
         $emp = $entry->employee;
         $period = $entry->payrollPeriod;
@@ -165,7 +170,7 @@ final class PayrollPresenter
             'baseCompensationCentavos' => (int) $entry->base_compensation_centavos,
             'currency' => $entry->currency,
             'confirmedPayableUnitsHundredths' => $entry->confirmed_payable_units_hundredths,
-            'attendanceSessionsInPeriod' => 0,
+            'attendanceSessionsInPeriod' => $attendanceSessionsInPeriod,
             'earnings' => $earnings,
             'deductions' => $deductions,
             'employerCosts' => $employerCosts,
@@ -203,5 +208,80 @@ final class PayrollPresenter
             'timestampUtc' => $log->occurred_at_utc->toIso8601String(),
         ];
     }
-}
 
+    /**
+     * @return array<string, mixed>
+     */
+    public static function attendance(Attendance $att): array
+    {
+        return [
+            'id' => (string) $att->id,
+            'employeeId' => $att->employee?->employee_code ?? '',
+            'employeeName' => $att->employee?->full_name ?? '',
+            'attendanceDate' => $att->attendance_date->format('Y-m-d'),
+            'clockInAtUtc' => $att->clock_in_at_utc->toIso8601String(),
+            'clockOutAtUtc' => $att->clock_out_at_utc?->toIso8601String(),
+            'durationMinutes' => $att->duration_minutes,
+            'status' => $att->status,
+            'businessTimezone' => $att->business_timezone,
+            'createdAtUtc' => $att->created_at?->toIso8601String() ?? '',
+            'updatedAtUtc' => $att->updated_at?->toIso8601String() ?? '',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function leaveRequest(LeaveRequest $req): array
+    {
+        $emp = $req->employee;
+        $revEmp = $req->reviewedBy?->employee;
+        $cancelLog = $req->decisionLogs->firstWhere('action', 'Cancelled');
+
+        return [
+            'id' => (string) $req->id,
+            'employeeId' => $emp?->employee_code ?? '',
+            'employeeName' => $emp?->full_name ?? '',
+            'department' => $emp?->department ?? 'Operations',
+            'leaveType' => $req->leave_type,
+            'startDate' => $req->start_date->format('Y-m-d'),
+            'endDate' => $req->end_date->format('Y-m-d'),
+            'calendarDays' => (int) $req->total_days,
+            'reason' => $req->reason,
+            'status' => $req->status,
+            'businessTimezone' => 'Asia/Manila',
+            'submittedAtUtc' => $req->created_at?->toIso8601String() ?? '',
+            'reviewedByEmployeeId' => $revEmp?->employee_code,
+            'reviewedByName' => $revEmp?->full_name ?? $req->reviewedBy?->name,
+            'reviewedByRole' => $revEmp?->assigned_role,
+            'reviewedAtUtc' => $req->reviewed_at_utc?->toIso8601String(),
+            'reviewerNote' => $req->reviewer_note,
+            'cancelledAtUtc' => $cancelLog?->occurred_at_utc?->toIso8601String(),
+            'decisionHistory' => $req->decisionLogs->map(fn (LeaveDecisionLog $log): array => [
+                'action' => $log->action,
+                'actorEmployeeId' => $log->actor_employee_code,
+                'actorName' => $log->actor_name,
+                'actorRole' => $log->actor_role,
+                'timestampUtc' => $log->occurred_at_utc->toIso8601String(),
+                'note' => $log->note,
+            ])->values()->all(),
+            'updatedAtUtc' => $req->updated_at?->toIso8601String() ?? '',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function securityAudit(SecurityAuditLog $log): array
+    {
+        return [
+            'id' => (string) $log->id,
+            'eventType' => $log->event_type,
+            'actorEmployeeId' => $log->actor_employee_code,
+            'actorRole' => $log->actor_role,
+            'targetEmployeeId' => $log->target_employee_code,
+            'summary' => $log->summary,
+            'timestampUtc' => $log->occurred_at_utc->toIso8601String(),
+        ];
+    }
+}

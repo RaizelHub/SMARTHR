@@ -124,7 +124,13 @@ export function createApiHttpClient(baseUrl?: string): AxiosInstance {
 
   client.interceptors.response.use(
     (response) => response,
-    (error: unknown) => Promise.reject(normalizeAxiosError(error)),
+    (error: unknown) => {
+      const normalized = normalizeAxiosError(error)
+      if (normalized.httpStatus === 401) {
+        clearStoredApiSession()
+      }
+      return Promise.reject(normalized)
+    },
   )
 
   return client

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Payroll\CreatePayrollPeriodRequest;
 use App\Http\Requests\Payroll\ReturnPayrollPeriodRequest;
 use App\Http\Transformers\PayrollPresenter;
+use App\Models\Attendance;
 use App\Models\PayrollPeriod;
 use App\Services\Payroll\PayrollWorkflowService;
 use Illuminate\Http\JsonResponse;
@@ -51,12 +52,19 @@ class PayrollPeriodController extends Controller
     {
         $this->authorize('viewAny', PayrollPeriod::class);
 
+        $attendanceCounts = Attendance::query()
+            ->whereDate('attendance_date', '>=', $period->period_start->format('Y-m-d'))
+            ->whereDate('attendance_date', '<=', $period->period_end->format('Y-m-d'))
+            ->selectRaw('employee_id, COUNT(*) as session_count')
+            ->groupBy('employee_id')
+            ->pluck('session_count', 'employee_id');
+
         $entries = $period->entries()
             ->with(['employee', 'lineItems', 'payrollPeriod'])
             ->get()
             ->sortBy(fn ($entry) => $entry->employee->full_name)
             ->values()
-            ->map(fn ($entry): array => PayrollPresenter::entry($entry));
+            ->map(fn ($entry): array => PayrollPresenter::entry($entry, (int) ($attendanceCounts[$entry->employee_id] ?? 0)));
 
         return response()->json(['entries' => $entries]);
     }
@@ -67,12 +75,19 @@ class PayrollPeriodController extends Controller
 
         $result = $this->workflow->generateAndCalculate($period, $request->user(), $request->ip());
 
+        $attendanceCounts = Attendance::query()
+            ->whereDate('attendance_date', '>=', $result['period']->period_start->format('Y-m-d'))
+            ->whereDate('attendance_date', '<=', $result['period']->period_end->format('Y-m-d'))
+            ->selectRaw('employee_id, COUNT(*) as session_count')
+            ->groupBy('employee_id')
+            ->pluck('session_count', 'employee_id');
+
         $entries = $result['period']->entries()
             ->with(['employee', 'lineItems', 'payrollPeriod'])
             ->get()
             ->sortBy(fn ($entry) => $entry->employee->full_name)
             ->values()
-            ->map(fn ($entry): array => PayrollPresenter::entry($entry));
+            ->map(fn ($entry): array => PayrollPresenter::entry($entry, (int) ($attendanceCounts[$entry->employee_id] ?? 0)));
 
         return response()->json([
             'period' => PayrollPresenter::period($result['period']),
@@ -163,4 +178,3 @@ class PayrollPeriodController extends Controller
         ]);
     }
 }
-

@@ -38,6 +38,7 @@ import type {
   StatusBreakdownItem,
   WorkforceReport,
 } from '../../../types/report'
+import { isBackendApiConfigured } from '../../api/httpClient'
 import {
   attendanceService as defaultAttendanceService,
   AttendanceServiceError,
@@ -76,6 +77,7 @@ import {
   buildEmployeeReportCsv,
   buildLeaveReportCsv,
 } from '../utils/csvExport'
+import { createApiReportService } from './reportApiService'
 
 /**
  * DEMO-ONLY CLIENT-SIDE ANALYTICS SERVICE
@@ -1275,4 +1277,6 @@ export function createDemoReportService(
   }
 }
 
-export const reportService: ReportService = createDemoReportService()
+export const reportService: ReportService = isBackendApiConfigured()
+  ? createApiReportService()
+  : createDemoReportService()

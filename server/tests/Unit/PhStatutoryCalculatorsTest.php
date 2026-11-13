@@ -134,4 +134,3 @@ class PhStatutoryCalculatorsTest extends TestCase
         $this->assertSame(0, $mwe['withholdingTaxCentavos']);
     }
 }
-

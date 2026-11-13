@@ -14,4 +14,3 @@ class PayrollDomainException extends RuntimeException
         parent::__construct($message);
     }
 }
-

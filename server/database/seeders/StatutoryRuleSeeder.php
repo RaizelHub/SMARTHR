@@ -88,4 +88,3 @@ class StatutoryRuleSeeder extends Seeder
         }
     }
 }
-

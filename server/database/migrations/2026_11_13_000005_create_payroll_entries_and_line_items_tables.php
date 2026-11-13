@@ -10,8 +10,8 @@ return new class extends Migration
     {
         Schema::create('payroll_entries', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('payroll_period_id')->constrained('payroll_periods')->cascadeOnDelete();
-            $table->foreignId('employee_id')->constrained('employees')->cascadeOnDelete();
+            $table->foreignId('payroll_period_id')->constrained('payroll_periods')->restrictOnDelete();
+            $table->foreignId('employee_id')->constrained('employees')->restrictOnDelete();
             $table->foreignId('compensation_id')->constrained('employee_compensations')->restrictOnDelete();
             $table->string('pay_basis', 16);
             $table->bigInteger('base_compensation_centavos');
@@ -60,4 +60,3 @@ return new class extends Migration
         Schema::dropIfExists('payroll_entries');
     }
 };
-

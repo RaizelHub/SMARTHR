@@ -213,24 +213,44 @@ final class PayrollWorkflowService
                 ->orderBy('full_name')
                 ->get();
 
+            $existingEmployeeIds = PayrollEntry::query()
+                ->where('payroll_period_id', $lockedPeriod->id)
+                ->pluck('employee_id')
+                ->map(fn ($id): int => (int) $id)
+                ->flip();
+
+            $employeeIds = $employees->pluck('id')->all();
+
+            // Preload effective compensations in one query per period to avoid N+1 lookups
+            $effectiveCompByEmployee = EmployeeCompensation::query()
+                ->whereIn('employee_id', $employeeIds)
+                ->where('status', '!=', 'Inactive')
+                ->whereDate('effective_date', '<=', $asOfDate)
+                ->where(function ($query) use ($asOfDate): void {
+                    $query->whereNull('end_date')->orWhereDate('end_date', '>=', $asOfDate);
+                })
+                ->orderByDesc('effective_date')
+                ->orderByDesc('id')
+                ->get()
+                ->groupBy('employee_id')
+                ->map(fn ($group) => $group->first());
+
+            // Preload prior same-month statutory totals in one bulk query across all employees
+            $priorStatutoryByEmployee = $this->getBulkPriorSameMonthStatutoryTotals($employeeIds, $lockedPeriod);
+
             $addedCount = 0;
             $preservedCount = 0;
             $missingWarnings = [];
 
             foreach ($employees as $employee) {
-                $existingEntry = PayrollEntry::query()
-                    ->where('payroll_period_id', $lockedPeriod->id)
-                    ->where('employee_id', $employee->id)
-                    ->with('lineItems')
-                    ->first();
-
-                if ($existingEntry) {
+                if ($existingEmployeeIds->has((int) $employee->id)) {
                     $preservedCount++;
 
                     continue;
                 }
 
-                $comp = $this->resolveEffectiveCompensation($employee->id, $asOfDate);
+                /** @var EmployeeCompensation|null $comp */
+                $comp = $effectiveCompByEmployee->get($employee->id);
                 if (! $comp) {
                     $missingWarnings[] = [
                         'employeeCode' => $employee->employee_code,
@@ -242,7 +262,8 @@ final class PayrollWorkflowService
                     continue;
                 }
 
-                $entry = $this->persistCalculatedEntry($employee, $comp, $lockedPeriod, null, []);
+                $priorTotals = $priorStatutoryByEmployee[$employee->id] ?? null;
+                $entry = $this->persistCalculatedEntry($employee, $comp, $lockedPeriod, null, [], $priorTotals);
                 $addedCount++;
                 unset($entry);
             }
@@ -586,22 +607,9 @@ final class PayrollWorkflowService
         });
     }
 
-    private function resolveEffectiveCompensation(int $employeeId, string $asOfDate): ?EmployeeCompensation
-    {
-        return EmployeeCompensation::query()
-            ->where('employee_id', $employeeId)
-            ->where('status', '!=', 'Inactive')
-            ->whereDate('effective_date', '<=', $asOfDate)
-            ->where(function ($query) use ($asOfDate): void {
-                $query->whereNull('end_date')->orWhereDate('end_date', '>=', $asOfDate);
-            })
-            ->orderByDesc('effective_date')
-            ->orderByDesc('id')
-            ->first();
-    }
-
     /**
      * @param  list<array<string, mixed>>  $manualAdjustments
+     * @param  array{sss_ee: int, sss_er: int, philhealth_ee: int, philhealth_er: int, pagibig_ee: int, pagibig_er: int}|null  $preloadedPrior
      */
     private function persistCalculatedEntry(
         Employee $employee,
@@ -609,8 +617,9 @@ final class PayrollWorkflowService
         PayrollPeriod $period,
         ?int $confirmedUnits,
         array $manualAdjustments,
+        ?array $preloadedPrior = null,
     ): PayrollEntry {
-        $prior = $this->getPriorSameMonthStatutoryTotals($employee->id, $period);
+        $prior = $preloadedPrior ?? $this->getPriorSameMonthStatutoryTotals($employee->id, $period);
         $calc = $this->engine->calculateEntry($employee, $comp, $period, $confirmedUnits, $manualAdjustments, $prior);
 
         $entry = PayrollEntry::query()->create([
@@ -635,8 +644,8 @@ final class PayrollWorkflowService
             'rule_snapshot_json' => $calc['ruleSnapshot'],
         ]);
 
-        foreach ($calc['lineItems'] as $line) {
-            $entry->lineItems()->create($line);
+        if ($calc['lineItems'] !== []) {
+            $entry->lineItems()->createMany($calc['lineItems']);
         }
 
         return $entry->load(['employee', 'lineItems']);
@@ -686,22 +695,44 @@ final class PayrollWorkflowService
      */
     private function getPriorSameMonthStatutoryTotals(int $employeeId, PayrollPeriod $currentPeriod): array
     {
+        $bulk = $this->getBulkPriorSameMonthStatutoryTotals([$employeeId], $currentPeriod);
+
+        return $bulk[$employeeId] ?? [
+            'sss_ee' => 0,
+            'sss_er' => 0,
+            'philhealth_ee' => 0,
+            'philhealth_er' => 0,
+            'pagibig_ee' => 0,
+            'pagibig_er' => 0,
+        ];
+    }
+
+    /**
+     * @param  list<int>  $employeeIds
+     * @return array<int, array{sss_ee: int, sss_er: int, philhealth_ee: int, philhealth_er: int, pagibig_ee: int, pagibig_er: int}>
+     */
+    private function getBulkPriorSameMonthStatutoryTotals(array $employeeIds, PayrollPeriod $currentPeriod): array
+    {
+        if ($employeeIds === []) {
+            return [];
+        }
+
         $monthStart = $currentPeriod->period_end->copy()->startOfMonth()->format('Y-m-d');
         $monthEnd = $currentPeriod->period_end->copy()->endOfMonth()->format('Y-m-d');
 
-        $lines = PayrollLineItem::query()
-            ->whereHas('entry', function ($query) use ($employeeId, $currentPeriod, $monthStart, $monthEnd): void {
-                $query->where('employee_id', $employeeId)
-                    ->where('payroll_period_id', '!=', $currentPeriod->id)
-                    ->whereHas('payrollPeriod', function ($pq) use ($monthStart, $monthEnd): void {
-                        $pq->whereDate('period_end', '>=', $monthStart)
-                            ->whereDate('period_end', '<=', $monthEnd);
-                    });
-            })
-            ->whereIn('code', ['SSS_EE', 'SSS_ER', 'PHILHEALTH_EE', 'PHILHEALTH_ER', 'PAGIBIG_EE', 'PAGIBIG_ER'])
+        $rows = PayrollLineItem::query()
+            ->join('payroll_entries', 'payroll_entries.id', '=', 'payroll_line_items.payroll_entry_id')
+            ->join('payroll_periods', 'payroll_periods.id', '=', 'payroll_entries.payroll_period_id')
+            ->whereIn('payroll_entries.employee_id', $employeeIds)
+            ->where('payroll_entries.payroll_period_id', '!=', $currentPeriod->id)
+            ->whereDate('payroll_periods.period_end', '>=', $monthStart)
+            ->whereDate('payroll_periods.period_end', '<=', $monthEnd)
+            ->whereIn('payroll_line_items.code', ['SSS_EE', 'SSS_ER', 'PHILHEALTH_EE', 'PHILHEALTH_ER', 'PAGIBIG_EE', 'PAGIBIG_ER'])
+            ->selectRaw('payroll_entries.employee_id as emp_id, LOWER(payroll_line_items.code) as stat_code, SUM(payroll_line_items.amount_centavos) as total_centavos')
+            ->groupBy('payroll_entries.employee_id', 'payroll_line_items.code')
             ->get();
 
-        $totals = [
+        $empty = [
             'sss_ee' => 0,
             'sss_er' => 0,
             'philhealth_ee' => 0,
@@ -710,14 +741,20 @@ final class PayrollWorkflowService
             'pagibig_er' => 0,
         ];
 
-        foreach ($lines as $line) {
-            $key = strtolower($line->code);
-            if (array_key_exists($key, $totals)) {
-                $totals[$key] += (int) $line->amount_centavos;
+        $result = [];
+        foreach ($employeeIds as $id) {
+            $result[(int) $id] = $empty;
+        }
+
+        foreach ($rows as $row) {
+            $empId = (int) $row->emp_id;
+            $code = (string) $row->stat_code;
+            if (isset($result[$empId]) && array_key_exists($code, $result[$empId])) {
+                $result[$empId][$code] += (int) $row->total_centavos;
             }
         }
 
-        return $totals;
+        return $result;
     }
 
     /**

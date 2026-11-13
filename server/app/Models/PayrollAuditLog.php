@@ -28,4 +28,3 @@ class PayrollAuditLog extends Model
         ];
     }
 }
-

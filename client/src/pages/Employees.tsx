@@ -7,7 +7,11 @@ import {
   employeeService,
   type EmployeeService,
 } from '../features/employees/services/employeeService'
-import type { CreateEmployeeInput, Employee } from '../types/employee'
+import type {
+  CreateEmployeeInput,
+  Employee,
+  EmploymentStatus,
+} from '../types/employee'
 
 interface EmployeesPageProps {
   service?: EmployeeService
@@ -35,13 +39,14 @@ export default function Employees({
   const actorEmployeeId = auth.actorContext.actorEmployeeId
   const sessionExpiresAtUtc = auth.actorContext.sessionExpiresAtUtc
   const canCreate = auth.hasPermission('employees.create')
-  const canDelete = auth.hasPermission('employees.delete')
+  const canUpdate = auth.hasPermission('employees.update') && Boolean(service.updateEmployee)
+  const canDelete = auth.hasPermission('employees.delete') && service.isDemoMode
   const canAssignHrAdmin = auth.hasPermission('roles.manage')
   const canReadAll = auth.hasPermission('employees.read_all')
   const canReadTeam = auth.hasPermission('employees.read_team')
 
   const scopeDescription = canReadAll
-    ? 'Organization scope: viewing all registered employees stored in browser demo storage.'
+    ? `Organization scope: viewing all registered employees${service.isDemoMode ? ' stored in browser demo storage.' : '.'}`
     : canReadTeam
       ? `Department scope (${auth.currentUser?.department ?? ''}): viewing only employees in your department.`
       : 'Personal scope: viewing only your own employee profile.'
@@ -142,6 +147,35 @@ export default function Employees({
     }
   }, [actorEmployeeId, sessionExpiresAtUtc, service])
 
+  const handleStatusChange = useCallback(
+    async (targetEmployeeId: string, nextStatus: EmploymentStatus) => {
+      if (!service.updateEmployee) {
+        return
+      }
+      setIsActionBusy(true)
+      setActionError(null)
+      try {
+        const updated = await service.updateEmployee(
+          { targetEmployeeId, employmentStatus: nextStatus },
+          { actorEmployeeId, sessionExpiresAtUtc },
+        )
+        setEmployees((prev) =>
+          prev.map((emp) =>
+            emp.employeeId === updated.employeeId ? updated : emp,
+          ),
+        )
+        await auth.refreshSession()
+      } catch (error: unknown) {
+        setActionError(
+          getErrorMessage(error, 'Failed to update employee status.'),
+        )
+      } finally {
+        setIsActionBusy(false)
+      }
+    },
+    [actorEmployeeId, auth, service, sessionExpiresAtUtc],
+  )
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -152,7 +186,7 @@ export default function Employees({
             </h1>
             <p className="mt-1 text-sm text-slate-600">
               {canCreate
-                ? 'Register new employees and review the active demo directory.'
+                ? `Register new employees and review the active ${service.isDemoMode ? 'demo ' : ''}directory.`
                 : 'Review employee records permitted for your assigned role.'}
             </p>
           </div>
@@ -198,6 +232,7 @@ export default function Employees({
           onRetryLoad={handleRetryLoad}
           onClearAll={canDelete ? handleClearAll : undefined}
           onResetDemo={canDelete ? handleResetDemo : undefined}
+          onStatusChange={canUpdate ? handleStatusChange : undefined}
           isActionBusy={isActionBusy}
           canManageDestructiveActions={canDelete}
           scopeDescription={scopeDescription}

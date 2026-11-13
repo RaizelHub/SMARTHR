@@ -23,4 +23,3 @@ class ReturnPayrollPeriodRequest extends FormRequest
         ];
     }
 }
-

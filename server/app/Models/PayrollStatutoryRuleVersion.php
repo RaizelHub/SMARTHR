@@ -29,4 +29,3 @@ class PayrollStatutoryRuleVersion extends Model
         ];
     }
 }
-

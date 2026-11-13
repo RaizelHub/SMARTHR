@@ -553,4 +553,3 @@ final class PayrollCalculationEngine
         ];
     }
 }
-

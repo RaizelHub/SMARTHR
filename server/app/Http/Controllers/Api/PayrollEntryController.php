@@ -136,4 +136,3 @@ class PayrollEntryController extends Controller
         return response()->json(['statutoryRules' => $rules]);
     }
 }
-

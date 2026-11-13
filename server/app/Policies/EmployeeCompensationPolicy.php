@@ -16,4 +16,3 @@ class EmployeeCompensationPolicy
         return $user->hasPermission('compensation.manage');
     }
 }
-

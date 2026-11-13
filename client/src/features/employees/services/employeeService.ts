@@ -1,9 +1,13 @@
 import {
   ASSIGNED_ROLES,
+  DEPARTMENTS,
+  EMPLOYMENT_STATUSES,
   type AssignedRole,
   type CreateEmployeeInput,
   type Employee,
+  type UpdateEmployeeInput,
 } from '../../../types/employee'
+import { isBackendApiConfigured } from '../../api/httpClient'
 import {
   canAccessEmployeeRecord,
   hasPermission,
@@ -16,9 +20,11 @@ import {
 } from '../../auth/securityAudit'
 import {
   createBaseEmployeeSchema,
+  isValidCalendarDate,
   normalizeEmployeeId,
   normalizeWorkEmail,
 } from '../validation/employeeSchema'
+import { createApiEmployeeService } from './employeeApiService'
 
 /**
  * DEMO-ONLY PERSISTENCE LAYER
@@ -162,6 +168,10 @@ export interface EmployeeService {
   listEmployees(actor: EmployeeActorContext): Promise<Employee[]>
   createEmployee(
     input: CreateEmployeeInput,
+    actor: EmployeeActorContext,
+  ): Promise<Employee>
+  updateEmployee?(
+    input: UpdateEmployeeInput,
     actor: EmployeeActorContext,
   ): Promise<Employee>
   updateEmployeeRole(
@@ -456,6 +466,135 @@ export function createDemoEmployeeService(
       return created
     },
 
+    async updateEmployee(
+      input: UpdateEmployeeInput,
+      actor: EmployeeActorContext,
+    ): Promise<Employee> {
+      const { actorEmployee, allEmployees } = resolveAuthenticatedActor(actor)
+
+      if (!hasPermission(actorEmployee, 'employees.update')) {
+        throw new EmployeeServiceError(
+          'UNAUTHORIZED',
+          'You do not have permission to update employee records.',
+          undefined,
+          403,
+        )
+      }
+
+      const targetKey = normalizeEmployeeId(input.targetEmployeeId)
+      const targetIndex = allEmployees.findIndex(
+        (employee) => normalizeEmployeeId(employee.employeeId) === targetKey,
+      )
+
+      if (targetIndex === -1) {
+        throw new EmployeeServiceError(
+          'EMPLOYEE_NOT_FOUND',
+          `Employee "${input.targetEmployeeId}" was not found.`,
+          undefined,
+          404,
+        )
+      }
+
+      const targetEmployee = allEmployees[targetIndex]
+      const nextEmail =
+        input.workEmail !== undefined
+          ? normalizeWorkEmail(input.workEmail)
+          : targetEmployee.workEmail
+
+      if (
+        input.workEmail !== undefined &&
+        allEmployees.some(
+          (emp, idx) =>
+            idx !== targetIndex && normalizeWorkEmail(emp.workEmail) === nextEmail,
+        )
+      ) {
+        throw new EmployeeServiceError(
+          'DUPLICATE_WORK_EMAIL',
+          `Work email "${nextEmail}" is already assigned to another employee`,
+          { workEmail: `Work email "${nextEmail}" is already assigned to another employee` },
+          409,
+        )
+      }
+
+      if (
+        input.department !== undefined &&
+        !DEPARTMENTS.includes(input.department)
+      ) {
+        throw new EmployeeServiceError(
+          'VALIDATION_ERROR',
+          `Invalid department "${String(input.department)}".`,
+          undefined,
+          400,
+        )
+      }
+
+      if (
+        input.employmentStatus !== undefined &&
+        !EMPLOYMENT_STATUSES.includes(input.employmentStatus)
+      ) {
+        throw new EmployeeServiceError(
+          'VALIDATION_ERROR',
+          `Invalid employment status "${String(input.employmentStatus)}".`,
+          undefined,
+          400,
+        )
+      }
+
+      if (input.hireDate !== undefined && !isValidCalendarDate(input.hireDate)) {
+        throw new EmployeeServiceError(
+          'VALIDATION_ERROR',
+          'Hire date must be a valid calendar date.',
+          undefined,
+          400,
+        )
+      }
+
+      if (
+        input.employmentStatus === 'Inactive' &&
+        targetEmployee.assignedRole === 'HR Admin'
+      ) {
+        const remainingAdmins = allEmployees.filter(
+          (emp, idx) =>
+            idx !== targetIndex &&
+            emp.assignedRole === 'HR Admin' &&
+            emp.employmentStatus !== 'Inactive',
+        )
+        if (remainingAdmins.length === 0) {
+          throw new EmployeeServiceError(
+            'VALIDATION_ERROR',
+            'Cannot deactivate the last active HR Admin account.',
+            undefined,
+            400,
+          )
+        }
+      }
+
+      const updatedEmployee: Employee = {
+        ...targetEmployee,
+        fullName:
+          input.fullName !== undefined
+            ? input.fullName.trim()
+            : targetEmployee.fullName,
+        workEmail: nextEmail,
+        department: input.department ?? targetEmployee.department,
+        position:
+          input.position !== undefined
+            ? input.position.trim()
+            : targetEmployee.position,
+        employmentStatus:
+          input.employmentStatus ?? targetEmployee.employmentStatus,
+        hireDate: input.hireDate ?? targetEmployee.hireDate,
+      }
+
+      writeStoredEmployees(
+        allEmployees.map((emp, idx) =>
+          idx === targetIndex ? updatedEmployee : emp,
+        ),
+      )
+
+      return updatedEmployee
+    },
+
     async updateEmployeeRole(
       input: UpdateEmployeeRoleInput,
       actor: EmployeeActorContext,
@@ -643,4 +782,6 @@ export function createDemoEmployeeService(
   }
 }
 
-export const employeeService: EmployeeService = createDemoEmployeeService()
+export const employeeService: EmployeeService = isBackendApiConfigured()
+  ? createApiEmployeeService()
+  : createDemoEmployeeService()

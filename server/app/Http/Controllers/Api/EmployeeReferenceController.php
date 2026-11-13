@@ -28,4 +28,3 @@ class EmployeeReferenceController extends Controller
         return response()->json(['employees' => $employees]);
     }
 }
-

@@ -6,6 +6,7 @@ import type {
   ReviewLeaveRequestInput,
   SubmitLeaveRequestInput,
 } from '../../../types/leave'
+import { isBackendApiConfigured } from '../../api/httpClient'
 import {
   canApproveOrRejectLeave,
   canViewLeaveRecord,
@@ -28,6 +29,7 @@ import {
   LEAVE_FIELD_LIMITS,
   type LeaveConflictPolicy,
 } from '../validation/leaveSchema'
+import { createApiLeaveService } from './leaveApiService'
 
 /**
  * DEMO-ONLY LEAVE PERSISTENCE LAYER
@@ -680,5 +682,7 @@ export function createDemoLeaveService(
   }
 }
 
-export const leaveService: LeaveService = createDemoLeaveService()
+export const leaveService: LeaveService = isBackendApiConfigured()
+  ? createApiLeaveService()
+  : createDemoLeaveService()
 

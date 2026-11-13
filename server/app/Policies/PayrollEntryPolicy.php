@@ -27,4 +27,3 @@ class PayrollEntryPolicy
         return $this->view($user, $entry);
     }
 }
-
