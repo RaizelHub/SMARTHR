@@ -369,4 +369,3 @@ class LeaveController extends Controller
         return response()->json($result['body'], $result['status']);
     }
 }
-

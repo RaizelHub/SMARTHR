@@ -128,7 +128,7 @@ describe('Employee Creation and Registration integration workflow', () => {
     await waitFor(() => {
       expect(
         screen.getByText(
-          /Registered Samira Patel \(EMP-3001\) in demo storage\./i,
+          /Registered Samira Patel \(EMP-3001\) successfully\./i,
         ),
       ).toBeTruthy()
     })

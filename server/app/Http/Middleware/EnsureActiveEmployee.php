@@ -40,4 +40,3 @@ class EnsureActiveEmployee
         return $next($request);
     }
 }
-

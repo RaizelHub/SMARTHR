@@ -54,4 +54,3 @@ class LeaveRequest extends Model
         return $this->hasMany(LeaveDecisionLog::class, 'leave_request_id')->orderBy('occurred_at_utc')->orderBy('id');
     }
 }
-

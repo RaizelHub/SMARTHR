@@ -102,7 +102,7 @@ export default function EmployeeRegistrationForm({
 
       reset(DEFAULT_FORM_VALUES)
       setSuccessNotice(
-        `Registered ${created.fullName} (${created.employeeId}) in demo storage.`,
+        `Registered ${created.fullName} (${created.employeeId}) successfully.`,
       )
     } catch (error: unknown) {
       if (error instanceof EmployeeServiceError) {

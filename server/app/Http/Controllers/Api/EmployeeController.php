@@ -489,4 +489,3 @@ class EmployeeController extends Controller
             ->first();
     }
 }
-

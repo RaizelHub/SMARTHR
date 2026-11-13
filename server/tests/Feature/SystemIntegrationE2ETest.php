@@ -441,4 +441,3 @@ class SystemIntegrationE2ETest extends TestCase
         $this->assertIsInt(SecurityAuditLog::query()->count());
     }
 }
-

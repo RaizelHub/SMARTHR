@@ -900,4 +900,3 @@ class ReportController extends Controller
         return $this->buildCsvDocument($headers, $rows);
     }
 }
-

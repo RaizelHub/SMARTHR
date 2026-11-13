@@ -197,13 +197,13 @@ export default function Employees({
             role="note"
             className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
           >
-            <span className="font-medium">Demo-Only Persistence:</span> No
-            backend server or database is currently connected. Employee records
-            and RBAC permissions run locally in browser{' '}
-            <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">
-              localStorage
+            <span className="font-medium">Demo Mode (Local Persistence):</span>{' '}
+            Operating with browser storage (<code>localStorage</code>) using
+            synthetic sample records. Configure{' '}
+            <code className="rounded bg-amber-100 px-1 py-0.5 text-xs font-mono">
+              VITE_API_BASE_URL
             </code>{' '}
-            using synthetic sample data.
+            to connect to the Laravel Sanctum backend API.
           </div>
         )}
 
