@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\VerifyOnboardingCommand;
 use App\Exceptions\PayrollDomainException;
 use App\Http\Middleware\EnsureActiveEmployee;
 use Illuminate\Foundation\Application;
@@ -14,6 +15,9 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    ->withCommands([
+        VerifyOnboardingCommand::class,
+    ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->statefulApi();
         $middleware->alias([

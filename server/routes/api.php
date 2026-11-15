@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\CompensationController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\EmployeeReferenceController;
@@ -24,6 +25,9 @@ Route::prefix('auth')->group(function (): void {
 });
 
 Route::middleware(['auth:sanctum', 'active.employee'])->group(function (): void {
+    // Organization Profile & Commercial License Configuration
+    Route::get('/company', [CompanyController::class, 'show']);
+
     // Organization reference directory for Payroll (requires employees.read_all)
     Route::get('/employees', [EmployeeReferenceController::class, 'index']);
 

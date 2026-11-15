@@ -36,6 +36,43 @@ export default function Dashboard() {
           </p>
         </div>
 
+        {canManageRoles && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center rounded-md border border-blue-300 bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800">
+                    Commercial Pilot Evaluation
+                  </span>
+                  <span className="text-xs text-slate-600">
+                    Deployment: Managed Single-Tenant · Timezone: Asia/Manila (UTC+08:00)
+                  </span>
+                </div>
+                <h2 className="mt-1 text-base font-semibold text-slate-900">
+                  Customer Onboarding &amp; System Readiness
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-600">
+                  Pre-flight checks, statutory calculation rules, and role scoping are active for your organization.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  to="/employees/new"
+                  className="rounded-md bg-blue-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  Onboard Employee
+                </Link>
+                <Link
+                  to="/roles"
+                  className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  Audit Log &amp; Roles
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <section className="rounded-lg border border-slate-200 bg-white p-5">
             <div className="flex items-center justify-between gap-2">

@@ -156,11 +156,22 @@ When `DEMO_SEED_PASSWORD` is configured, the following accounts are available fo
 
 Comprehensive guides are available in the [`docs/`](docs/) directory:
 
+### Core System Guides
 - [User Guide](docs/USER_GUIDE.md): Role-specific usage instructions for Administrator, HR, Manager, and Employee workflows.
 - [Administrator Guide](docs/ADMINISTRATOR_GUIDE.md): Production deployment, PostgreSQL setup, backup & restore procedures, and security configurations.
 - [System Limitations & Unconfigured Policies](docs/LIMITATIONS.md): Transparent accounting of incomplete, mocked, or policy-dependent features.
 - [Commercial Pilot Runbook & Demo Script](docs/PILOT_RUNBOOK.md): Step-by-step 8-stage customer demonstration walkthrough, pilot checklist, and compliance review.
 - [Deployment & Recovery Guide](server/DEPLOYMENT_AND_RECOVERY.md): PostgreSQL database configuration and disaster recovery procedures.
+
+### Commercial Productization Suite (Phase 9)
+- [Commercial Product Overview](docs/PRODUCT_OVERVIEW.md): System vision, target market, module status, and regulatory alignment.
+- [Customer Onboarding Guide & Checklist](docs/CUSTOMER_ONBOARDING.md): 10-step repeatable onboarding workflow, CSV ingestion templates, and handover sign-off.
+- [Commercial Deployment & Architecture Guide](docs/DEPLOYMENT_GUIDE.md): Architecture evaluation (Single-tenant vs Multi-tenant), production server sizing, and Nginx reverse proxy.
+- [Licensing & Subscription Strategy](docs/LICENSING_STRATEGY.md): Commercial licensing tiers, lifecycle, and non-punitive data preservation policy.
+- [System Maintenance & Update Guide](docs/MAINTENANCE_GUIDE.md): Scheduled maintenance, pre-update snapshots, database migration strategy, and fast rollback runbook.
+- [Customer Support Policy Draft](docs/SUPPORT_POLICY_DRAFT.md): Support channels, Severity 1–4 classifications, proposed target SLAs, and escalation ladder.
+- [Commercial Pricing Strategy & Cost Model](docs/PRICING_STRATEGY.md): Proposed PHP pricing packages (Starter, Professional, Enterprise) and operational cost/profitability breakdown.
+- [Commercial Readiness & Compliance Assessment](docs/COMMERCIAL_READINESS.md): Objective 12-point readiness audit, verified capabilities, and Phase 10 roadmap.
 
 ---
 
@@ -186,18 +197,32 @@ enterprise-hr-management/
 │   └── package.json
 ├── server/                       # Laravel 12 REST API
 │   ├── app/
-│   │   ├── Http/Controllers/Api/ # REST API controllers
+│   │   ├── Console/Commands/     # Custom Artisan commands (verify-onboarding)
+│   │   ├── Http/Controllers/Api/ # REST API controllers (incl. CompanyController)
 │   │   ├── Http/Middleware/      # Active employee & auth middleware
 │   │   ├── Http/Transformers/    # Presenters & DTO serializers
 │   │   ├── Models/               # Eloquent models
 │   │   ├── Services/Payroll/     # Statutory calculation engine & workflow
 │   │   └── Support/              # RolePermissions matrix
+│   ├── config/                   # Configuration files (incl. smarthr.php)
 │   ├── database/
 │   │   ├── migrations/           # PostgreSQL/SQLite database schema definitions
 │   │   └── seeders/              # Statutory rule & demo account seeders
 │   ├── routes/api.php            # Sanctum authenticated API endpoints
 │   └── tests/                    # Feature & Unit PHPUnit test suites
-└── docs/                         # System manuals, runbooks & limitations
+└── docs/                         # System manuals, runbooks & commercial suite
+    ├── ADMINISTRATOR_GUIDE.md
+    ├── COMMERCIAL_READINESS.md
+    ├── CUSTOMER_ONBOARDING.md
+    ├── DEPLOYMENT_GUIDE.md
+    ├── LICENSING_STRATEGY.md
+    ├── LIMITATIONS.md
+    ├── MAINTENANCE_GUIDE.md
+    ├── PILOT_RUNBOOK.md
+    ├── PRICING_STRATEGY.md
+    ├── PRODUCT_OVERVIEW.md
+    ├── SUPPORT_POLICY_DRAFT.md
+    └── USER_GUIDE.md
     ├── USER_GUIDE.md
     ├── ADMINISTRATOR_GUIDE.md
     ├── LIMITATIONS.md
